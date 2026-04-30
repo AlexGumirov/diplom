@@ -1,0 +1,31 @@
+{% extends "monitoring/base.html" %}
+
+{% block content %}
+<section class="work-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Карточка</p>
+                <h2>Добавить спортсмена</h2>
+            </div>
+        </div>
+        <form class="form-stack" id="athleteForm">
+            <label>
+                <span>Имя спортсмена</span>
+                <input name="name" type="text" placeholder="Например, Иван Петров" required>
+            </label>
+            <button class="primary-button" type="submit">Добавить</button>
+        </form>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">База</p>
+                <h2>Список спортсменов</h2>
+            </div>
+        </div>
+        <div class="cards-list" id="athletesList"></div>
+    </article>
+</section>
+{% endblock %}

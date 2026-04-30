@@ -1,0 +1,55 @@
+{% extends "monitoring/base.html" %}
+
+{% block content %}
+<section class="panel analysis-head">
+    <div>
+        <p class="eyebrow">ML и динамика</p>
+        <h2>Анализ состояния спортсмена</h2>
+    </div>
+    <form class="inline-form" id="analysisForm">
+        <select name="athlete_id" id="analysisAthlete" required></select>
+        <button class="primary-button" type="submit">Проанализировать</button>
+    </form>
+</section>
+
+<section class="metric-grid">
+    <article class="metric-card mint">
+        <span>Записей</span>
+        <strong id="analysisRecordsCount">0</strong>
+    </article>
+    <article class="metric-card peach">
+        <span>Динамика</span>
+        <strong id="analysisDelta">--</strong>
+    </article>
+    <article class="metric-card lavender">
+        <span>Аномалий</span>
+        <strong id="analysisAnomalies">0</strong>
+    </article>
+    <article class="metric-card sky">
+        <span>Статус</span>
+        <strong id="analysisStatus">--</strong>
+    </article>
+</section>
+
+<section class="work-grid equal">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Isolation Forest</p>
+                <h2>Аномалии</h2>
+            </div>
+        </div>
+        <div class="cards-list" id="anomalyList"></div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Pandas</p>
+                <h2>Корреляции</h2>
+            </div>
+        </div>
+        <div class="correlation-box" id="correlationBox"></div>
+    </article>
+</section>
+{% endblock %}

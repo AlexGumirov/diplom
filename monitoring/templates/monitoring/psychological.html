@@ -1,0 +1,46 @@
+{% extends "monitoring/base.html" %}
+
+{% block content %}
+<section class="work-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">САН</p>
+                <h2>Внести показатели</h2>
+            </div>
+        </div>
+        <form class="form-grid" id="psychologicalForm">
+            <label class="span-2">
+                <span>Дневная запись</span>
+                <select name="daily_record" id="psychologicalRecord" required></select>
+            </label>
+            <label><span>Самочувствие</span><input name="wellbeing" type="number" min="1" max="7" required></label>
+            <label><span>Активность</span><input name="activity" type="number" min="1" max="7" required></label>
+            <label><span>Настроение</span><input name="mood" type="number" min="1" max="7" required></label>
+            <button class="primary-button span-2" type="submit">Сохранить психологические данные</button>
+        </form>
+    </article>
+
+    <article class="panel wide-panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">История</p>
+                <h2>Методика САН</h2>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Запись</th>
+                        <th>Самочувствие</th>
+                        <th>Активность</th>
+                        <th>Настроение</th>
+                    </tr>
+                </thead>
+                <tbody id="psychologicalTable"></tbody>
+            </table>
+        </div>
+    </article>
+</section>
+{% endblock %}

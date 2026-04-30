@@ -1,0 +1,50 @@
+{% extends "monitoring/base.html" %}
+
+{% block content %}
+<section class="work-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Дневник</p>
+                <h2>Создать запись</h2>
+            </div>
+        </div>
+        <form class="form-stack" id="recordForm">
+            <label>
+                <span>Спортсмен</span>
+                <select name="athlete_profile" id="recordAthlete" required></select>
+            </label>
+            <label>
+                <span>Дата</span>
+                <input name="date" type="date" required>
+            </label>
+            <button class="primary-button" type="submit">Создать</button>
+        </form>
+    </article>
+
+    <article class="panel wide-panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Расчеты</p>
+                <h2>Дневные записи</h2>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Дата</th>
+                        <th>Спортсмен</th>
+                        <th>Физика</th>
+                        <th>Психология</th>
+                        <th>Итог</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="recordsTable"></tbody>
+            </table>
+        </div>
+    </article>
+</section>
+{% endblock %}

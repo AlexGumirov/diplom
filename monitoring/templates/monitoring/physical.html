@@ -1,0 +1,53 @@
+{% extends "monitoring/base.html" %}
+
+{% block content %}
+<section class="work-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Физика</p>
+                <h2>Внести показатели</h2>
+            </div>
+        </div>
+        <form class="form-grid" id="physicalForm">
+            <label class="span-2">
+                <span>Дневная запись</span>
+                <select name="daily_record" id="physicalRecord" required></select>
+            </label>
+            <label><span>Сон, часов</span><input name="sleep_hours" type="number" min="0" max="10" step="0.1" required></label>
+            <label><span>Приемы пищи</span><input name="meals" type="number" min="0" max="5" step="1" required></label>
+            <label><span>ЧСС покоя</span><input name="heart_rate_rest" type="number" min="50" max="90" required></label>
+            <label><span>ЧСС нагрузки</span><input name="heart_rate_load" type="number" min="90" max="220" required></label>
+            <label><span>Восстановление</span><input name="recovery_time" type="text" placeholder="2:30 или 2.5" required></label>
+            <label><span>Усталость</span><input name="fatigue" type="number" min="1" max="10" required></label>
+            <label><span>RPE</span><input name="rpe" type="number" min="1" max="10" required></label>
+            <button class="primary-button span-2" type="submit">Сохранить физические данные</button>
+        </form>
+    </article>
+
+    <article class="panel wide-panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">История</p>
+                <h2>Физические показатели</h2>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Запись</th>
+                        <th>Сон</th>
+                        <th>Питание</th>
+                        <th>ЧСС</th>
+                        <th>Восст.</th>
+                        <th>Устал.</th>
+                        <th>RPE</th>
+                    </tr>
+                </thead>
+                <tbody id="physicalTable"></tbody>
+            </table>
+        </div>
+    </article>
+</section>
+{% endblock %}
