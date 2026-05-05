@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --border: #e6e8f0;
+        --text: #16182b;
+        --muted: #6f768d;
+        --primary: #17182f;
+        --primary-hover: #232544;
+        --accent: #eef1f9;
+        --shadow: 0 20px 45px rgba(23, 24, 47, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(166, 188, 255, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(192, 235, 226, 0.24), transparent 30%),
+          var(--bg);
+        color: var(--text);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(100%, 1040px);
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .hero,
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--muted);
+        font-size: 14px;
+        width: fit-content;
+      }
+
+      .eyebrow-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #dfe8ff;
+        color: #34479c;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 24px 0 16px;
+        font-size: clamp(36px, 4vw, 54px);
+        line-height: 1;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.6;
+        max-width: 32rem;
+      }
+
+      .facts {
+        margin-top: 36px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      .fact {
+        padding: 18px;
+        border-radius: 22px;
+        background: #fbfcff;
+        border: 1px solid var(--border);
+      }
+
+      .fact small {
+        color: var(--muted);
+        display: block;
+        margin-bottom: 10px;
+      }
+
+      .fact strong {
+        font-size: 28px;
+      }
+
+      .panel {
+        padding: 36px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .panel h2 {
+        margin: 0 0 8px;
+        font-size: 32px;
+      }
+
+      .panel-copy {
+        color: var(--muted);
+        margin-bottom: 28px;
+        line-height: 1.6;
+      }
+
+      form {
+        display: grid;
+        gap: 18px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      input {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: #fdfdff;
+        color: var(--text);
+        border-radius: 16px;
+        padding: 15px 16px;
+        font: inherit;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+
+      input:focus {
+        border-color: #9aaaf6;
+        box-shadow: 0 0 0 4px rgba(154, 170, 246, 0.18);
+      }
+
+      .error {
+        border-radius: 16px;
+        background: #fff0f0;
+        color: #b43737;
+        padding: 14px 16px;
+        font-size: 14px;
+      }
+
+      button {
+        margin-top: 8px;
+        border: 0;
+        border-radius: 18px;
+        background: var(--primary);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        padding: 16px 18px;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.2s;
+      }
+
+      button:hover {
+        background: var(--primary-hover);
+        transform: translateY(-1px);
+      }
+
+      .note {
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          padding: 28px;
+        }
+
+        .facts {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">
+            <span class="eyebrow-mark">AM</span>
+            Athlete Monitor
+          </div>
+          <h1>Мониторинг состояния спортсмена</h1>
+          <p>
+            Войди в систему, чтобы заполнять физические показатели, проходить тест САН
+            и отслеживать динамику общего состояния по графикам.
+          </p>
+        </div>
+
+        <div class="facts">
+          <div class="fact">
+            <small>Физика</small>
+            <strong>1–10</strong>
+          </div>
+          <div class="fact">
+            <small>Психология</small>
+            <strong>САН</strong>
+          </div>
+          <div class="fact">
+            <small>Динамика</small>
+            <strong>Δ</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Вход</h2>
+        <div class="panel-copy">
+          Используй логин и пароль пользователя, чтобы открыть рабочее пространство спортсмена.
+        </div>
+
+        <form method="post" action="">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}" />
+
+          {% if error_message %}
+            <div class="error">{{ error_message }}</div>
+          {% endif %}
+
+          <label>
+            Логин
+            <input
+              type="text"
+              name="username"
+              autocomplete="username"
+              value="{{ form.username.value|default:'' }}"
+              required
+            />
+          </label>
+
+          <label>
+            Пароль
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+
+          <button type="submit">Войти в сервис</button>
+        </form>
+
+        <div class="note">
+          После входа ты попадёшь в основной интерфейс приложения с графиками, вводом физических
+          данных и тестом методики САН.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

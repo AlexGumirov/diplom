@@ -12,11 +12,15 @@ def validate_range(value, minimum, maximum, field_name):
 def parse_recovery_time(value):
     """Accepts float minutes or a 'mm:ss' string and returns float minutes."""
     if isinstance(value, str):
+        value = value.strip()
         parts = value.split(":")
         if len(parts) != 2:
-            raise serializers.ValidationError(
-                "recovery_time must be a float or a string in mm:ss format."
-            )
+            try:
+                return float(value)
+            except ValueError as exc:
+                raise serializers.ValidationError(
+                    "recovery_time must be a float or a string in mm:ss format."
+                ) from exc
         try:
             minutes = int(parts[0])
             seconds = int(parts[1])

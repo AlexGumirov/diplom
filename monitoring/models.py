@@ -78,9 +78,9 @@ class PsychologicalData(models.Model):
         related_name="psychological_data",
         on_delete=models.CASCADE,
     )
-    wellbeing = models.PositiveSmallIntegerField()
-    activity = models.PositiveSmallIntegerField()
-    mood = models.PositiveSmallIntegerField()
+    wellbeing = models.FloatField()
+    activity = models.FloatField()
+    mood = models.FloatField()
 
     def __str__(self):
         return f"Psychological data for {self.daily_record}"

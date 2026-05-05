@@ -87,13 +87,13 @@ class PsychologicalDataSerializer(serializers.ModelSerializer):
         fields = ["id", "daily_record", "wellbeing", "activity", "mood"]
 
     def validate_wellbeing(self, value):
-        return validate_range(value, 1, 7, "wellbeing")
+        return validate_range(float(value), 1, 7, "wellbeing")
 
     def validate_activity(self, value):
-        return validate_range(value, 1, 7, "activity")
+        return validate_range(float(value), 1, 7, "activity")
 
     def validate_mood(self, value):
-        return validate_range(value, 1, 7, "mood")
+        return validate_range(float(value), 1, 7, "mood")
 
     def validate_daily_record(self, value):
         request = self.context.get("request")
