@@ -129,12 +129,16 @@ export type AnomalyDirection = 'above' | 'below'
 export interface AnomalyItem {
   key: string
   label: string
-  current_value: number
-  mean_value: number
-  difference: number
+  raw_current_value: number
+  raw_mean_value: number
+  raw_difference: number
+  normalized_current_value: number
+  normalized_mean_value: number
+  unit: string
   abs_difference: number
   direction: AnomalyDirection
   direction_label: string
+  severity: 'high'
   message: string
 }
 
@@ -146,6 +150,7 @@ export interface AnomalyReport {
   is_anomaly?: boolean
   anomaly_score?: number
   last_record_date?: string
+  model_summary?: string
   items: AnomalyItem[]
   message?: string
 }

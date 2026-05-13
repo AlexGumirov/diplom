@@ -42,6 +42,32 @@ ANOMALY_FEATURES = [
     "mood_norm",
 ]
 
+ANOMALY_RAW_FEATURES = [
+    "sleep_hours",
+    "meals",
+    "heart_rate_rest",
+    "heart_rate_load",
+    "recovery_time",
+    "fatigue",
+    "rpe",
+    "wellbeing",
+    "activity",
+    "mood",
+]
+
+ANOMALY_NORMALIZED_BY_RAW = {
+    "sleep_hours": "sleep_norm",
+    "meals": "meals_norm",
+    "heart_rate_rest": "heart_rate_rest_norm",
+    "heart_rate_load": "heart_rate_load_norm",
+    "recovery_time": "recovery_norm",
+    "fatigue": "fatigue_norm",
+    "rpe": "rpe_norm",
+    "wellbeing": "wellbeing_norm",
+    "activity": "activity_norm",
+    "mood": "mood_norm",
+}
+
 PHYSICAL_CORRELATION_FEATURES = [
     "sleep_hours",
     "meals",
@@ -76,16 +102,40 @@ ANALYSIS_LABELS = {
     "total_score": "Общее состояние",
 }
 ANOMALY_LABELS = {
-    "sleep_norm": "Сон",
-    "meals_norm": "Приемы пищи",
-    "heart_rate_rest_norm": "ЧСС в покое",
-    "heart_rate_load_norm": "ЧСС при нагрузке",
-    "recovery_norm": "Восстановление",
-    "fatigue_norm": "Усталость",
-    "rpe_norm": "RPE",
-    "wellbeing_norm": "Самочувствие",
-    "activity_norm": "Активность",
-    "mood_norm": "Настроение",
+    "sleep_hours": "Сон",
+    "meals": "Приемы пищи",
+    "heart_rate_rest": "ЧСС в покое",
+    "heart_rate_load": "ЧСС при нагрузке",
+    "recovery_time": "Восстановление",
+    "fatigue": "Усталость",
+    "rpe": "RPE",
+    "wellbeing": "Самочувствие",
+    "activity": "Активность",
+    "mood": "Настроение",
+}
+ANOMALY_UNITS = {
+    "sleep_hours": "ч",
+    "meals": "",
+    "heart_rate_rest": "уд/мин",
+    "heart_rate_load": "уд/мин",
+    "recovery_time": "мин",
+    "fatigue": "балла",
+    "rpe": "балла",
+    "wellbeing": "балла",
+    "activity": "балла",
+    "mood": "балла",
+}
+ANOMALY_MIN_THRESHOLDS = {
+    "sleep_hours": 1.0,
+    "meals": 1.0,
+    "heart_rate_rest": 5.0,
+    "heart_rate_load": 10.0,
+    "recovery_time": 0.5,
+    "fatigue": 2.0,
+    "rpe": 2.0,
+    "wellbeing": 1.0,
+    "activity": 1.0,
+    "mood": 1.0,
 }
 CORRELATION_LABELS = ANALYSIS_LABELS
 MIN_CORRELATION_RECORDS = 7
@@ -377,21 +427,115 @@ def build_correlation_report(records, top_n=3):
 
 def _anomaly_direction(difference):
     if difference > 0:
-        return "above", "превышает"
-    return "below", "уступает"
+        return "above", "выше"
+    return "below", "ниже"
 
 
 def _round_metric(value):
     return round(float(value), 2)
 
 
-def _anomaly_message(label, athlete_name, direction, direction_label, abs_difference):
-    comparison_target = "среднее значение" if direction == "above" else "среднему значению"
+def _format_number(value):
+    rounded = _round_metric(value)
+    return str(int(rounded)) if rounded.is_integer() else str(rounded)
+
+
+def _pluralize_ru(value, forms):
+    absolute = abs(float(value))
+    if not absolute.is_integer():
+        return forms[1]
+
+    number = int(absolute) % 100
+    if 11 <= number <= 14:
+        return forms[2]
+
+    last_digit = number % 10
+    if last_digit == 1:
+        return forms[0]
+    if 2 <= last_digit <= 4:
+        return forms[1]
+    return forms[2]
+
+
+def _message_unit(key, value):
+    if key == "sleep_hours":
+        return _pluralize_ru(value, ("час", "часа", "часов"))
+    if key == "meals":
+        return _pluralize_ru(value, ("прием пищи", "приема пищи", "приемов пищи"))
+    if key in {"fatigue", "rpe", "wellbeing", "activity", "mood"}:
+        return _pluralize_ru(value, ("балл", "балла", "баллов"))
+    return ANOMALY_UNITS[key]
+
+
+def _format_difference_for_message(key, abs_difference):
+    value = _format_number(abs_difference)
+    unit = _message_unit(key, abs_difference)
+    return f"{value} {unit}".strip()
+
+
+def _anomaly_message(key, direction, abs_difference):
+    amount = _format_difference_for_message(key, abs_difference)
+    direction_label = "выше" if direction == "above" else "ниже"
+
+    if key == "sleep_hours":
+        return (
+            f"Продолжительность сна {direction_label} среднего значения спортсмена "
+            f"на {amount}."
+        )
+    if key == "heart_rate_rest":
+        return (
+            f"ЧСС в покое {direction_label} привычного уровня спортсмена "
+            f"на {amount}."
+        )
+    if key == "heart_rate_load":
+        return (
+            f"ЧСС при нагрузке {direction_label} привычного уровня спортсмена "
+            f"на {amount}."
+        )
+    if key == "recovery_time":
+        return (
+            f"Время восстановления {direction_label} привычного уровня спортсмена "
+            f"на {amount}."
+        )
+    if key == "meals":
+        return (
+            f"Количество приемов пищи {direction_label} среднего значения спортсмена "
+            f"на {amount}."
+        )
+    if key == "fatigue":
+        if direction == "above":
+            return f"Уровень усталости превышает среднее значение спортсмена на {amount}."
+        return f"Уровень усталости ниже среднего значения спортсмена на {amount}."
+    if key == "rpe":
+        if direction == "above":
+            return (
+                f"Субъективная тяжесть нагрузки превышает среднее значение спортсмена "
+                f"на {amount}."
+            )
+        return (
+            f"Субъективная тяжесть нагрузки ниже среднего значения спортсмена "
+            f"на {amount}."
+        )
+    if key == "wellbeing":
+        return (
+            f"Самочувствие {direction_label} среднего значения спортсмена "
+            f"на {amount}."
+        )
+    if key == "activity":
+        return (
+            f"Активность {direction_label} среднего значения спортсмена "
+            f"на {amount}."
+        )
     return (
-        f"ВНИМАНИЕ! Показатель «{label}» выходит за усредненные значения для {athlete_name}. "
-        f"Обратите внимание, показатель «{label}» {direction_label} "
-        f"{comparison_target} на {abs_difference}."
+        f"Настроение {direction_label} среднего значения спортсмена "
+        f"на {amount}."
     )
+
+
+def _isolation_forest_summary(is_anomaly):
+    if is_anomaly:
+        return "Последняя запись существенно отличается от обычного состояния спортсмена."
+    return "Последняя запись соответствует типичному состоянию спортсмена."
 
 
 def build_anomaly_report(records, athlete_name="спортсмена"):
@@ -410,54 +554,59 @@ def build_anomaly_report(records, athlete_name="спортсмена"):
             "message": "Недостаточно данных для анализа критических отклонений. Нужно минимум 7 записей.",
         }
 
-    dataframe = pd.DataFrame([_normalized_anomaly_row(row) for row in rows])
-    feature_frame = dataframe[ANOMALY_FEATURES]
+    raw_frame = pd.DataFrame(rows)
+    normalized_frame = pd.DataFrame([_normalized_anomaly_row(row) for row in rows])
+    feature_frame = normalized_frame[ANOMALY_FEATURES]
     model = IsolationForest(contamination="auto", random_state=42)
     model.fit(feature_frame)
 
     latest_features = feature_frame.tail(1)
-    latest_record = dataframe.iloc[-1]
+    latest_raw_record = raw_frame.iloc[-1]
+    latest_normalized_record = normalized_frame.iloc[-1]
     is_anomaly = bool(model.predict(latest_features)[0] == -1)
     anomaly_score = _round_metric(model.decision_function(latest_features)[0])
-    means = feature_frame.mean(numeric_only=True)
-    deviations = feature_frame.std(numeric_only=True)
+    raw_means = raw_frame[ANOMALY_RAW_FEATURES].mean(numeric_only=True)
+    raw_deviations = raw_frame[ANOMALY_RAW_FEATURES].std(numeric_only=True)
+    normalized_means = feature_frame.mean(numeric_only=True)
     items = []
 
-    for key in ANOMALY_FEATURES:
-        std_value = float(deviations[key])
-        if std_value == 0 or pd.isna(std_value):
+    for key in ANOMALY_RAW_FEATURES:
+        std_value = float(raw_deviations[key])
+        if pd.isna(std_value):
             continue
 
-        current_value = float(latest_record[key])
-        mean_value = float(means[key])
-        difference = current_value - mean_value
-        if abs(difference) < std_value:
+        raw_current_value = float(latest_raw_record[key])
+        raw_mean_value = float(raw_means[key])
+        raw_difference = raw_current_value - raw_mean_value
+        min_threshold = ANOMALY_MIN_THRESHOLDS[key]
+        critical_threshold = max(2 * std_value, min_threshold)
+        if abs(raw_difference) < critical_threshold:
             continue
 
-        direction, direction_label = _anomaly_direction(difference)
-        rounded_difference = _round_metric(difference)
-        abs_difference = _round_metric(abs(difference))
+        direction, direction_label = _anomaly_direction(raw_difference)
+        rounded_difference = _round_metric(raw_difference)
+        abs_difference = _round_metric(abs(raw_difference))
         label = ANOMALY_LABELS[key]
+        normalized_key = ANOMALY_NORMALIZED_BY_RAW[key]
         items.append(
             {
                 "key": key,
                 "label": label,
-                "current_value": _round_metric(current_value),
-                "mean_value": _round_metric(mean_value),
-                "difference": rounded_difference,
+                "raw_current_value": _round_metric(raw_current_value),
+                "raw_mean_value": _round_metric(raw_mean_value),
+                "raw_difference": rounded_difference,
+                "normalized_current_value": _round_metric(latest_normalized_record[normalized_key]),
+                "normalized_mean_value": _round_metric(normalized_means[normalized_key]),
+                "unit": ANOMALY_UNITS[key],
                 "abs_difference": abs_difference,
                 "direction": direction,
                 "direction_label": direction_label,
-                "message": _anomaly_message(
-                    label,
-                    athlete_name,
-                    direction,
-                    direction_label,
-                    abs_difference,
-                ),
+                "severity": "high",
+                "message": _anomaly_message(key, direction, abs_difference),
             }
         )
 
+    model_summary = _isolation_forest_summary(is_anomaly)
     if not items:
         return {
             **base_response,
@@ -465,8 +614,9 @@ def build_anomaly_report(records, athlete_name="спортсмена"):
             "method": "Isolation Forest",
             "is_anomaly": is_anomaly,
             "anomaly_score": anomaly_score,
-            "last_record_date": latest_record["date"],
-            "message": "Все показатели не отклоняются от усредненных значений.",
+            "last_record_date": latest_raw_record["date"],
+            "model_summary": model_summary,
+            "message": "Показатели находятся в пределах привычного диапазона спортсмена.",
         }
 
     return {
@@ -475,6 +625,8 @@ def build_anomaly_report(records, athlete_name="спортсмена"):
         "method": "Isolation Forest",
         "is_anomaly": is_anomaly,
         "anomaly_score": anomaly_score,
-        "last_record_date": latest_record["date"],
+        "last_record_date": latest_raw_record["date"],
+        "model_summary": model_summary,
+        "message": "Обнаружены показатели, значительно отличающиеся от привычного состояния спортсмена.",
         "items": items,
     }

@@ -43,11 +43,30 @@ function AnomalyDirectionIcon({ item }: { item: AnomalyItem }) {
 }
 
 function formatMetric(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
-function formatDifference(value: number) {
-  return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2)
+function formatRecoveryMinutes(value: number, signed = false) {
+  const sign = value > 0 && signed ? '+' : value < 0 ? '-' : ''
+  const absolute = Math.abs(value)
+  let minutes = Math.floor(absolute)
+  let seconds = Math.round((absolute - minutes) * 60)
+
+  if (seconds === 60) {
+    minutes += 1
+    seconds = 0
+  }
+
+  return `${sign}${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function formatAnomalyValue(item: AnomalyItem, value: number, signed = false) {
+  if (item.key === 'recovery_time') {
+    return formatRecoveryMinutes(value, signed)
+  }
+
+  const formatted = signed && value > 0 ? `+${formatMetric(value)}` : formatMetric(value)
+  return item.unit ? `${formatted} ${item.unit}` : formatted
 }
 
 export function StatisticsPage({ userName }: StatisticsPageProps) {
@@ -139,10 +158,10 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
         <div className="bg-card rounded-xl shadow-sm border border-border p-8 mb-6">
           <div className="flex items-center justify-between gap-4 mb-6">
             <div>
-              <h2>Самые зависимые показатели</h2>
+              <h2>Статистические связи</h2>
               {report && (
                 <p className="text-sm text-muted-foreground mt-2">
-                  Для каждой шкалы САН показан самый связанный с ней физический показатель.
+                  Для каждой шкалы САН показан физический показатель с наиболее выраженной статистической взаимосвязью.
                   Метод: корреляция Пирсона, записей в расчете: {report.records_count}
                 </p>
               )}
@@ -230,7 +249,7 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
               <h2>Критические отклонения</h2>
               {anomalyReport && (
                 <p className="text-sm text-muted-foreground mt-2">
-                  Модель Isolation Forest и сравнение текущих нормализованных показателей со средними значениями спортсмена.
+                  Isolation Forest оценивает нетипичность последней записи, а показатели ниже отображаются в исходных единицах.
                   Записей в расчете: {anomalyReport.records_count}
                 </p>
               )}
@@ -259,17 +278,33 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
 
           {!anomalyLoading && !anomalyError && anomalyReport?.status === 'ok' && (
             <div className="bg-muted/50 rounded-lg p-6">
-              <div className="flex items-center gap-3">
+              <div className="flex items-start gap-3">
                 <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
-                <p className="text-foreground">
-                  {anomalyReport.message}
-                </p>
+                <div>
+                  <p className="text-foreground">{anomalyReport.message}</p>
+                  {anomalyReport.model_summary && (
+                    <p className="text-sm text-muted-foreground mt-2">{anomalyReport.model_summary}</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {!anomalyLoading && !anomalyError && anomalyReport?.status === 'warning' && (
             <div className="space-y-6">
+              <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-500 rounded-lg p-5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-yellow-900 dark:text-yellow-200">{anomalyReport.message}</p>
+                    {anomalyReport.model_summary && (
+                      <p className="text-sm text-yellow-800/80 dark:text-yellow-300/80 mt-2">
+                        {anomalyReport.model_summary}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
               {anomalyReport.items.map((item) => (
                 <div key={item.key}>
                   <div className="bg-accent/30 rounded-lg p-6 mb-3">
@@ -280,18 +315,18 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
                         </span>
                         <AnomalyDirectionIcon item={item} />
                         <span className="px-4 py-2 bg-primary/10 text-primary rounded-lg">
-                          Среднее нормализованное значение
+                          Привычный уровень
                         </span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
                         <span className="px-3 py-1 bg-background border border-border rounded-md">
-                          текущее: {formatMetric(item.current_value)}
+                          Текущее: {formatAnomalyValue(item, item.raw_current_value)}
                         </span>
                         <span className="px-3 py-1 bg-background border border-border rounded-md">
-                          среднее: {formatMetric(item.mean_value)}
+                          Среднее: {formatAnomalyValue(item, item.raw_mean_value)}
                         </span>
                         <span className="px-3 py-1 bg-background border border-border rounded-md">
-                          разница: {formatDifference(item.difference)}
+                          Отклонение: {formatAnomalyValue(item, item.raw_difference, true)}
                         </span>
                       </div>
                     </div>
@@ -317,7 +352,7 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
             Коэффициент Пирсона показывает статистическую связь между показателями на шкале от -1 до 1.
             Положительное значение означает прямую связь, отрицательное значение означает обратную связь.
             На этой странице для Самочувствия, Активности и Настроения выбирается самый связанный физический показатель.
-            Корреляция описывает наблюдаемую зависимость и не доказывает причину.
+            Корреляция описывает наблюдаемую статистическую взаимосвязь и не доказывает причину.
           </p>
         </div>
       </div>

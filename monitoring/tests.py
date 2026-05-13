@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
@@ -14,6 +15,7 @@ from monitoring.models import (
 )
 from monitoring.serializers import AthleteProfileSerializer, PhysicalDataSerializer
 from monitoring.services.analysis import (
+    _normalized_anomaly_row,
     aggregated_delta,
     build_anomaly_report,
     build_correlation_report,
@@ -131,8 +133,8 @@ class SerializerValidationTests(SimpleTestCase):
             serializer.validate_age(101)
 
     def test_recovery_time_parses_mm_ss_as_decimal_minutes(self):
-        self.assertAlmostEqual(parse_recovery_time("2:10"), 2 + 10 / 60)
-        self.assertAlmostEqual(parse_recovery_time("1:55"), 1 + 55 / 60)
+        self.assertAlmostEqual(parse_recovery_time("2:10"), 2.1667, places=4)
+        self.assertAlmostEqual(parse_recovery_time("1:55"), 1.9167, places=4)
 
 
 class DeltaAnalysisTests(SimpleTestCase):
@@ -398,55 +400,87 @@ class AnomalyAnalysisTests(SimpleTestCase):
 
         self.assertEqual(report["status"], "ok")
         self.assertEqual(report["items"], [])
-        self.assertEqual(report["message"], "Все показатели не отклоняются от усредненных значений.")
+        self.assertEqual(report["message"], "Показатели находятся в пределах привычного диапазона спортсмена.")
+        expected_model_summary = (
+            "Последняя запись существенно отличается от обычного состояния спортсмена."
+            if report["is_anomaly"]
+            else "Последняя запись соответствует типичному состоянию спортсмена."
+        )
+        self.assertEqual(report["model_summary"], expected_model_summary)
 
-    def test_anomaly_report_flags_fatigue_norm_below_average(self):
+    def test_anomaly_report_does_not_flag_small_deviations_as_critical(self):
+        records = [
+            make_correlation_record(index=index, fatigue=5 if index < 7 else 5.7)
+            for index in range(1, 8)
+        ]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertEqual(report["status"], "ok")
+        self.assertFalse(any(item["key"] == "fatigue" for item in report["items"]))
+
+    def test_anomaly_report_does_not_flag_fatigue_difference_below_min_threshold(self):
+        records = [
+            make_correlation_record(index=index, fatigue=5 if index < 7 else 5.7)
+            for index in range(1, 8)
+        ]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertFalse(any(item["key"] == "fatigue" for item in report["items"]))
+
+    def test_anomaly_report_flags_fatigue_above_average(self):
         records = [
             make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
             for index in range(1, 8)
         ]
 
         report = build_anomaly_report(records, athlete_name="Александр Гумиров")
-        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue_norm")
+        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue")
 
         self.assertEqual(report["status"], "warning")
-        self.assertEqual(fatigue_item["direction"], "below")
-        self.assertEqual(fatigue_item["direction_label"], "уступает")
+        self.assertEqual(fatigue_item["direction"], "above")
+        self.assertEqual(fatigue_item["direction_label"], "выше")
 
-    def test_anomaly_report_flags_sleep_norm_below_average(self):
+    def test_anomaly_report_flags_sleep_difference_of_2_8_hours(self):
         records = [
-            make_correlation_record(index=index, sleep_hours=8 if index < 7 else 2)
+            make_correlation_record(index=index, sleep_hours=8.27 if index < 7 else 5)
             for index in range(1, 8)
         ]
 
         report = build_anomaly_report(records, athlete_name="Александр Гумиров")
-        sleep_item = next(item for item in report["items"] if item["key"] == "sleep_norm")
+        sleep_item = next(item for item in report["items"] if item["key"] == "sleep_hours")
 
         self.assertEqual(report["status"], "warning")
         self.assertEqual(sleep_item["direction"], "below")
-        self.assertEqual(sleep_item["direction_label"], "уступает")
+        self.assertEqual(sleep_item["direction_label"], "ниже")
+        self.assertEqual(sleep_item["raw_current_value"], 5)
+        self.assertEqual(sleep_item["raw_mean_value"], 7.8)
+        self.assertEqual(sleep_item["raw_difference"], -2.8)
+        self.assertEqual(sleep_item["unit"], "ч")
+        self.assertIn("2.8 часа", sleep_item["message"])
 
     def test_anomaly_report_ignores_zero_standard_deviation(self):
         records = [make_correlation_record(index=index, fatigue=5) for index in range(1, 8)]
 
         report = build_anomaly_report(records, athlete_name="Александр Гумиров")
 
-        self.assertFalse(any(item["key"] == "fatigue_norm" for item in report["items"]))
+        self.assertFalse(any(item["key"] == "fatigue" for item in report["items"]))
 
-    def test_anomaly_report_formats_warning_message(self):
+    def test_anomaly_report_formats_human_warning_message_with_units(self):
         records = [
             make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
             for index in range(1, 8)
         ]
 
         report = build_anomaly_report(records, athlete_name="Александр Гумиров")
-        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue_norm")
+        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue")
 
-        self.assertIn("ВНИМАНИЕ! Показатель «Усталость»", fatigue_item["message"])
-        self.assertIn("для Александр Гумиров", fatigue_item["message"])
-        self.assertIn("уступает среднему значению", fatigue_item["message"])
+        self.assertNotIn("ВНИМАНИЕ", fatigue_item["message"])
+        self.assertIn("Уровень усталости превышает среднее значение спортсмена", fatigue_item["message"])
+        self.assertIn("балла", fatigue_item["message"])
 
-    def test_anomaly_report_uses_only_normalized_source_features(self):
+    def test_anomaly_report_returns_raw_ui_values_and_normalized_diagnostics(self):
         records = [
             make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
             for index in range(1, 8)
@@ -457,13 +491,48 @@ class AnomalyAnalysisTests(SimpleTestCase):
 
         self.assertTrue(report["items"])
         for item in report["items"]:
-            self.assertTrue(item["key"].endswith("_norm"))
             self.assertNotIn(item["key"], aggregate_keys)
-            self.assertGreaterEqual(item["current_value"], 1)
-            self.assertLessEqual(item["current_value"], 10)
+            self.assertIn("raw_current_value", item)
+            self.assertIn("raw_mean_value", item)
+            self.assertIn("raw_difference", item)
+            self.assertIn("normalized_current_value", item)
+            self.assertIn("normalized_mean_value", item)
+            self.assertNotIn("current_value", item)
+            self.assertGreaterEqual(item["normalized_current_value"], 1)
+            self.assertLessEqual(item["normalized_current_value"], 10)
+
+    def test_activity_is_normalized_once_for_anomaly_features(self):
+        row = {
+            "sleep_hours": 8,
+            "meals": 3,
+            "heart_rate_rest": 60,
+            "heart_rate_load": 140,
+            "recovery_time": 2,
+            "fatigue": 5,
+            "rpe": 5,
+            "wellbeing": 4,
+            "activity": 4,
+            "mood": 4,
+        }
+
+        normalized = _normalized_anomaly_row(row)
+
+        self.assertEqual(normalized["activity_norm"], 5.5)
 
 
-def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5):
+class FrontendSourceTests(SimpleTestCase):
+    def test_statistics_page_displays_raw_anomaly_values_only(self):
+        source = Path("ui/src/app/components/StatisticsPage.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("item.raw_current_value", source)
+        self.assertIn("item.raw_mean_value", source)
+        self.assertIn("item.raw_difference", source)
+        self.assertNotIn("item.normalized_current_value", source)
+        self.assertNotIn("item.normalized_mean_value", source)
+        self.assertNotIn("Среднее нормализованное значение", source)
+
+
+def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5, activity=4):
     record = DailyRecord.objects.create(
         athlete_profile=profile,
         date=date(2026, 5, day),
@@ -481,7 +550,7 @@ def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5):
     PsychologicalData.objects.create(
         daily_record=record,
         wellbeing=4,
-        activity=4,
+        activity=activity,
         mood=4,
     )
     StateScore.objects.create(
@@ -585,4 +654,27 @@ class ProfileApiTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["records_count"], 7)
         self.assertEqual(payload["status"], "ok")
-        self.assertFalse(any(item["key"] == "fatigue_norm" for item in payload["items"]))
+        self.assertFalse(any(item["key"] == "fatigue" for item in payload["items"]))
+
+    def test_anomalies_endpoint_returns_raw_values_for_frontend(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        profile = AthleteProfile.objects.create(user=user)
+        for day in range(1, 7):
+            create_complete_db_record(profile, day, sleep_hours=8.27)
+        create_complete_db_record(profile, 7, sleep_hours=5)
+
+        self.client.force_login(user)
+
+        response = self.client.get("/app-api/anomalies/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        sleep_item = next(item for item in payload["items"] if item["key"] == "sleep_hours")
+        self.assertEqual(payload["status"], "warning")
+        self.assertEqual(sleep_item["raw_current_value"], 5)
+        self.assertEqual(sleep_item["raw_mean_value"], 7.8)
+        self.assertEqual(sleep_item["raw_difference"], -2.8)
+        self.assertEqual(sleep_item["unit"], "ч")
+        self.assertIn("normalized_current_value", sleep_item)
+        self.assertIn("normalized_mean_value", sleep_item)
+        self.assertNotIn("current_value", sleep_item)
