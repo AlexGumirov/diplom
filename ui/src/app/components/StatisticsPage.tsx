@@ -6,20 +6,12 @@ import type {
   AnomalyItem,
   AnomalyReport,
   CorrelationItem,
-  CorrelationPeriod,
   CorrelationReport,
 } from '../types'
 
 interface StatisticsPageProps {
   userName: string
 }
-
-const PERIOD_OPTIONS: Array<{ value: CorrelationPeriod; label: string }> = [
-  { value: '7', label: '7 дней' },
-  { value: '14', label: '14 дней' },
-  { value: '31', label: '31 день' },
-  { value: 'all', label: 'Весь период' },
-]
 
 function DirectionIcon({ item }: { item: CorrelationItem }) {
   if (item.direction === 'positive') {
@@ -70,7 +62,6 @@ function formatAnomalyValue(item: AnomalyItem, value: number, signed = false) {
 }
 
 export function StatisticsPage({ userName }: StatisticsPageProps) {
-  const [period, setPeriod] = useState<CorrelationPeriod>('all')
   const [report, setReport] = useState<CorrelationReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -83,7 +74,7 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
     setLoading(true)
     setError('')
 
-    fetchCorrelations(period)
+    fetchCorrelations('all')
       .then((payload) => {
         if (isMounted) {
           setReport(payload)
@@ -103,7 +94,7 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
     return () => {
       isMounted = false
     }
-  }, [period])
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -135,24 +126,8 @@ export function StatisticsPage({ userName }: StatisticsPageProps) {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
+        <div className="mb-8">
           <h1>Статистика</h1>
-          <div className="flex gap-2 flex-wrap">
-            {PERIOD_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setPeriod(option.value)}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  period === option.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="bg-card rounded-xl shadow-sm border border-border p-8 mb-6">

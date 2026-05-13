@@ -531,6 +531,15 @@ class FrontendSourceTests(SimpleTestCase):
         self.assertNotIn("item.normalized_mean_value", source)
         self.assertNotIn("Среднее нормализованное значение", source)
 
+    def test_statistics_page_does_not_render_period_filters(self):
+        source = Path("ui/src/app/components/StatisticsPage.tsx").read_text(encoding="utf-8")
+
+        self.assertNotIn("PERIOD_OPTIONS", source)
+        self.assertNotIn("setPeriod", source)
+        self.assertNotIn("7 дней", source)
+        self.assertNotIn("14 дней", source)
+        self.assertNotIn("31 день", source)
+
 
 def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5, activity=4):
     record = DailyRecord.objects.create(
