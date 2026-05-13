@@ -1,148 +1,101 @@
 import json
-from dataclasses import dataclass
 
-from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login as auth_login
-from django.db import transaction
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import AuthenticationForm
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
-from django.utils import timezone
-from django.utils.dateparse import parse_date
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AthleteProfile, DailyRecord, PhysicalData, PsychologicalData, SANAnswer, SANTest
-from .serializers import PhysicalDataSerializer
-from .services.calculations import calculate_record_scores
-from .services.san import SAN_QUESTIONS, calculate_SAN_scores
+from .models import PhysicalData
+from .presenters import serialize_profile, serialize_record, serialize_san_questions
+from .services.analysis import (
+    aggregated_delta,
+    build_correlation_report,
+    delta_between_neighbors,
+)
+from .services.record_workflow import (
+    build_delta,
+    build_physical_serializer,
+    calculate_if_ready,
+    get_or_create_daily_record,
+    get_or_create_profile,
+    get_records_for_profile,
+    json_safe_errors,
+    save_san_results,
+    validate_san_answers,
+)
+
+PERIOD_VALUES = {"7", "14", "31", "all", "neighbors"}
+CORRELATION_PERIOD_VALUES = {"7", "14", "31", "all"}
+DELTA_METRICS = {
+    "overall": "total_score",
+    "physical": "physical_score",
+    "psychological": "psychological_score",
+}
 
 
-@dataclass
-class SANAnswerPayload:
-    question_number: int
-    value: int
+def _read_json_body(request):
+    try:
+        return json.loads(request.body or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid JSON body.") from exc
 
 
-def _get_profile(request):
-    return AthleteProfile.objects.get_or_create(user=request.user)[0]
+def _scored_records_ascending(records, score_field="total_score"):
+    return [
+        record
+        for record in sorted(records, key=lambda item: item.date)
+        if getattr(getattr(record, "state_score", None), score_field, None) is not None
+    ]
 
 
-def _serialize_profile(profile):
-    return {
-        "id": profile.id,
-        "username": profile.user.username,
-        "display_name": profile.user.get_full_name() or profile.user.username,
-        "age": profile.age,
-        "gender": profile.get_gender_display() if profile.gender else "",
-        "sport": profile.sport,
+def _records_for_period(records, period, score_field="total_score"):
+    scored_records = _scored_records_ascending(records, score_field)
+    if period in {"all", "neighbors"}:
+        return scored_records
+    return scored_records[-int(period) :]
+
+
+def _complete_records_ascending(records):
+    complete_records = []
+    for record in sorted(records, key=lambda item: item.date):
+        if (
+            getattr(record, "physical_data", None) is not None
+            and getattr(record, "psychological_data", None) is not None
+            and getattr(record, "state_score", None) is not None
+        ):
+            complete_records.append(record)
+    return complete_records
+
+
+def _records_for_correlation_period(records, period):
+    complete_records = _complete_records_ascending(records)
+    if period == "all":
+        return complete_records
+    return complete_records[-int(period) :]
+
+
+def _build_period_delta_payload(records, period, score_field="total_score"):
+    period_records = _records_for_period(records, period, score_field)
+    payload = {
+        "period": period,
+        "aggregated": aggregated_delta(period_records, score_field),
     }
+    if period == "neighbors":
+        payload["neighbors"] = delta_between_neighbors(period_records, score_field)
+    return payload
 
 
-def _serialize_record(record):
-    state_score = getattr(record, "state_score", None)
-    physical_data = getattr(record, "physical_data", None)
-    psychological_data = getattr(record, "psychological_data", None)
-
+def _build_delta_analysis_payload(records):
     return {
-        "id": record.id,
-        "date": record.date.isoformat(),
-        "created_at": record.created_at.isoformat(),
-        "physical_score": getattr(state_score, "physical_score", None),
-        "psychological_score": getattr(state_score, "psychological_score", None),
-        "total_score": getattr(state_score, "total_score", None),
-        "physical_data": (
-            {
-                "sleep_hours": physical_data.sleep_hours,
-                "meals": physical_data.meals,
-                "heart_rate_rest": physical_data.heart_rate_rest,
-                "heart_rate_load": physical_data.heart_rate_load,
-                "recovery_time": physical_data.recovery_time,
-                "fatigue": physical_data.fatigue,
-                "rpe": physical_data.rpe,
-            }
-            if physical_data
-            else None
-        ),
-        "psychological_data": (
-            {
-                "wellbeing": psychological_data.wellbeing,
-                "activity": psychological_data.activity,
-                "mood": psychological_data.mood,
-            }
-            if psychological_data
-            else None
-        ),
-    }
-
-
-def _records_queryset(profile):
-    return (
-        DailyRecord.objects.filter(athlete_profile=profile)
-        .select_related("physical_data", "psychological_data", "state_score")
-        .order_by("-date")
-    )
-
-
-def _get_record_date(raw_date):
-    if raw_date:
-        parsed = parse_date(raw_date)
-        if parsed is None:
-            raise ValueError("Invalid date format. Use YYYY-MM-DD.")
-        return parsed
-    return timezone.localdate()
-
-
-def _get_or_create_daily_record(profile, raw_date):
-    record_date = _get_record_date(raw_date)
-    daily_record, _ = DailyRecord.objects.get_or_create(
-        athlete_profile=profile,
-        date=record_date,
-    )
-    return daily_record
-
-
-def _calculate_if_ready(daily_record):
-    if hasattr(daily_record, "physical_data") and hasattr(daily_record, "psychological_data"):
-        return calculate_record_scores(daily_record)
-    return None
-
-
-def _json_safe_errors(errors):
-    return json.loads(json.dumps(errors, default=str))
-
-
-def _build_delta(current, previous, threshold=0.3):
-    if current is None or previous is None:
-        return {
-            "status": "insufficient_data",
-            "delta": None,
-            "message": "Not enough data for comparison.",
+        metric: {
+            period: _build_period_delta_payload(records, period, score_field)
+            for period in ("7", "14", "31", "all", "neighbors")
         }
-
-    current_total = getattr(getattr(current, "state_score", None), "total_score", None)
-    previous_total = getattr(getattr(previous, "state_score", None), "total_score", None)
-    if current_total is None or previous_total is None:
-        return {
-            "status": "insufficient_data",
-            "delta": None,
-            "message": "Not enough data for comparison.",
-        }
-
-    delta = round(current_total - previous_total, 2)
-    if delta > threshold:
-        status = "improvement"
-    elif delta < -threshold:
-        status = "deterioration"
-    else:
-        status = "stable"
-
-    return {
-        "status": status,
-        "delta": delta,
-        "previous_date": previous.date.isoformat(),
-        "current_date": current.date.isoformat(),
+        for metric, score_field in DELTA_METRICS.items()
     }
 
 
@@ -182,11 +135,11 @@ def spa_index(request):
 @login_required(login_url="/login/")
 @require_GET
 def app_bootstrap(request):
-    profile = _get_profile(request)
-    records = list(_records_queryset(profile))
-
+    profile = get_or_create_profile(request.user)
+    records = list(get_records_for_profile(profile))
     latest_with_score = next((record for record in records if getattr(record, "state_score", None)), None)
     previous_with_score = None
+
     if latest_with_score:
         latest_index = records.index(latest_with_score)
         previous_with_score = next(
@@ -198,60 +151,91 @@ def app_bootstrap(request):
             None,
         )
 
-    payload = {
-        "profile": _serialize_profile(profile),
-        "records": [_serialize_record(record) for record in records],
-        "latest_delta": _build_delta(latest_with_score, previous_with_score),
-        "questions": [
-            {
-                "number": question["number"],
-                "left_text": question["left_text"],
-                "right_text": question["right_text"],
-            }
-            for question in SAN_QUESTIONS
-        ],
-    }
-    return JsonResponse(payload)
+    return JsonResponse(
+        {
+            "profile": serialize_profile(profile),
+            "records": [serialize_record(record) for record in records],
+            "latest_delta": build_delta(latest_with_score, previous_with_score),
+            "delta_analysis": _build_delta_analysis_payload(records),
+            "questions": serialize_san_questions(),
+        }
+    )
+
+
+@login_required(login_url="/login/")
+@require_GET
+def app_delta_analysis(request):
+    period = request.GET.get("period", "7")
+    metric = request.GET.get("metric", "overall")
+    if period not in PERIOD_VALUES:
+        return JsonResponse(
+            {"errors": {"period": ["Use one of: 7, 14, 31, all, neighbors."]}},
+            status=400,
+        )
+    if metric not in DELTA_METRICS:
+        return JsonResponse(
+            {"errors": {"metric": ["Use one of: overall, physical, psychological."]}},
+            status=400,
+        )
+
+    profile = get_or_create_profile(request.user)
+    records = list(get_records_for_profile(profile))
+    return JsonResponse(_build_period_delta_payload(records, period, DELTA_METRICS[metric]))
+
+
+@login_required(login_url="/login/")
+@require_GET
+def app_correlations(request):
+    period = request.GET.get("period", "7")
+    if period not in CORRELATION_PERIOD_VALUES:
+        return JsonResponse(
+            {"errors": {"period": ["Use one of: 7, 14, 31, all."]}},
+            status=400,
+        )
+
+    try:
+        top_n = int(request.GET.get("top_n", "3"))
+    except ValueError:
+        return JsonResponse(
+            {"errors": {"top_n": ["Use a positive integer."]}},
+            status=400,
+        )
+
+    profile = get_or_create_profile(request.user)
+    records = list(get_records_for_profile(profile))
+    period_records = _records_for_correlation_period(records, period)
+    return JsonResponse(build_correlation_report(period_records, top_n=top_n))
 
 
 @login_required(login_url="/login/")
 @require_POST
 def save_physical_data(request):
-    profile = _get_profile(request)
+    profile = get_or_create_profile(request.user)
 
     try:
-        payload = json.loads(request.body or "{}")
-        daily_record = _get_or_create_daily_record(profile, payload.get("date"))
-    except (json.JSONDecodeError, ValueError) as exc:
+        payload = _read_json_body(request)
+        daily_record = get_or_create_daily_record(profile, payload.get("date"))
+    except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
     physical_instance = PhysicalData.objects.filter(daily_record=daily_record).first()
-    serializer = PhysicalDataSerializer(
+    serializer = build_physical_serializer(
+        daily_record=daily_record,
+        payload=payload,
+        request=request,
         instance=physical_instance,
-        data={
-            "daily_record": daily_record.id,
-            "sleep_hours": payload.get("sleep_hours"),
-            "meals": payload.get("meals"),
-            "heart_rate_rest": payload.get("heart_rate_rest"),
-            "heart_rate_load": payload.get("heart_rate_load"),
-            "recovery_time": payload.get("recovery_time"),
-            "fatigue": payload.get("fatigue"),
-            "rpe": payload.get("rpe"),
-        },
-        context={"request": request},
     )
 
     if not serializer.is_valid():
-        return JsonResponse({"errors": _json_safe_errors(serializer._errors)}, status=400)
+        return JsonResponse({"errors": json_safe_errors(serializer._errors)}, status=400)
 
     serializer.save(daily_record=daily_record)
     daily_record.refresh_from_db()
-    scores = _calculate_if_ready(daily_record)
 
     return JsonResponse(
         {
-            "record": _serialize_record(daily_record),
-            "scores": scores,
+            "record": serialize_record(daily_record),
+            "scores": calculate_if_ready(daily_record),
         },
         status=201 if physical_instance is None else 200,
     )
@@ -260,202 +244,29 @@ def save_physical_data(request):
 @login_required(login_url="/login/")
 @require_POST
 def submit_san_test(request):
-    profile = _get_profile(request)
+    profile = get_or_create_profile(request.user)
 
     try:
-        payload = json.loads(request.body or "{}")
-        answers_payload = payload.get("answers", [])
-        daily_record = _get_or_create_daily_record(profile, payload.get("date"))
-    except (json.JSONDecodeError, ValueError) as exc:
+        payload = _read_json_body(request)
+        daily_record = get_or_create_daily_record(profile, payload.get("date"))
+    except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
-    if len(answers_payload) != len(SAN_QUESTIONS):
-        return JsonResponse(
-            {"errors": {"answers": ["Exactly 30 SAN answers are required."]}},
-            status=400,
-        )
+    answers, errors = validate_san_answers(payload.get("answers", []))
+    if errors:
+        return JsonResponse({"errors": errors}, status=400)
 
-    normalized_answers = []
-    seen_numbers = set()
-    for item in answers_payload:
-        try:
-            question_number = int(item["question_number"])
-            value = int(item["value"])
-        except (KeyError, TypeError, ValueError):
-            return JsonResponse(
-                {"errors": {"answers": ["Each SAN answer must contain integer question_number and value."]}},
-                status=400,
-            )
-
-        if question_number in seen_numbers:
-            return JsonResponse(
-                {"errors": {"answers": [f"Duplicate answer for question {question_number}."]}},
-                status=400,
-            )
-        if not 1 <= question_number <= 30:
-            return JsonResponse(
-                {"errors": {"answers": [f"Question number {question_number} is out of range."]}},
-                status=400,
-            )
-        if not 1 <= value <= 7:
-            return JsonResponse(
-                {"errors": {"answers": [f"Answer value for question {question_number} must be between 1 and 7."]}},
-                status=400,
-            )
-
-        seen_numbers.add(question_number)
-        normalized_answers.append(SANAnswerPayload(question_number=question_number, value=value))
-
-    with transaction.atomic():
-        PsychologicalData.objects.filter(daily_record=daily_record).delete()
-        SANTest.objects.filter(daily_record=daily_record, athlete_profile=profile).delete()
-
-        test = SANTest.objects.create(athlete_profile=profile, daily_record=daily_record)
-        SANAnswer.objects.bulk_create(
-            [
-                SANAnswer(
-                    test=test,
-                    question_number=answer.question_number,
-                    value=answer.value,
-                )
-                for answer in normalized_answers
-            ]
-        )
-
-        answers = list(test.answers.all())
-        scores = calculate_SAN_scores(answers)
-        PsychologicalData.objects.update_or_create(
-            daily_record=daily_record,
-            defaults={
-                "wellbeing": scores["wellbeing"],
-                "activity": scores["activity"],
-                "mood": scores["mood"],
-            },
-        )
-
-        daily_record.refresh_from_db()
-        overall_scores = _calculate_if_ready(daily_record)
-
-    return JsonResponse(
-        {
-            "san_scores": scores,
-            "record": _serialize_record(daily_record),
-            "scores": overall_scores,
-        },
-        status=201,
+    san_scores, overall_scores = save_san_results(
+        profile=profile,
+        daily_record=daily_record,
+        answers=answers,
     )
-
-
-@login_required(login_url="/login/")
-@require_POST
-def save_full_record(request):
-    """Compatibility endpoint for an old cached frontend bundle.
-
-    The current UI saves physical data and SAN answers with two separate buttons.
-    This endpoint is kept only so a browser with stale JS does not receive a 404.
-    """
-    profile = _get_profile(request)
-
-    try:
-        payload = json.loads(request.body or "{}")
-        answers_payload = payload.get("answers", [])
-        daily_record = _get_or_create_daily_record(profile, payload.get("date"))
-    except (json.JSONDecodeError, ValueError) as exc:
-        return HttpResponseBadRequest(str(exc))
-
-    if len(answers_payload) != len(SAN_QUESTIONS):
-        return JsonResponse(
-            {"errors": {"answers": ["Exactly 30 SAN answers are required."]}},
-            status=400,
-        )
-
-    normalized_answers = []
-    seen_numbers = set()
-    for item in answers_payload:
-        try:
-            question_number = int(item["question_number"])
-            value = int(item["value"])
-        except (KeyError, TypeError, ValueError):
-            return JsonResponse(
-                {"errors": {"answers": ["Each SAN answer must contain integer question_number and value."]}},
-                status=400,
-            )
-
-        if question_number in seen_numbers:
-            return JsonResponse(
-                {"errors": {"answers": [f"Duplicate answer for question {question_number}."]}},
-                status=400,
-            )
-        if not 1 <= question_number <= 30:
-            return JsonResponse(
-                {"errors": {"answers": [f"Question number {question_number} is out of range."]}},
-                status=400,
-            )
-        if not 1 <= value <= 7:
-            return JsonResponse(
-                {"errors": {"answers": [f"Answer value for question {question_number} must be between 1 and 7."]}},
-                status=400,
-            )
-
-        seen_numbers.add(question_number)
-        normalized_answers.append(SANAnswerPayload(question_number=question_number, value=value))
-
-    physical_instance = PhysicalData.objects.filter(daily_record=daily_record).first()
-    serializer = PhysicalDataSerializer(
-        instance=physical_instance,
-        data={
-            "daily_record": daily_record.id,
-            "sleep_hours": payload.get("sleep_hours"),
-            "meals": payload.get("meals"),
-            "heart_rate_rest": payload.get("heart_rate_rest"),
-            "heart_rate_load": payload.get("heart_rate_load"),
-            "recovery_time": payload.get("recovery_time"),
-            "fatigue": payload.get("fatigue"),
-            "rpe": payload.get("rpe"),
-        },
-        context={"request": request},
-    )
-
-    if not serializer.is_valid():
-        return JsonResponse({"errors": _json_safe_errors(serializer._errors)}, status=400)
-
-    with transaction.atomic():
-        serializer.save(daily_record=daily_record)
-
-        PsychologicalData.objects.filter(daily_record=daily_record).delete()
-        SANTest.objects.filter(daily_record=daily_record, athlete_profile=profile).delete()
-
-        test = SANTest.objects.create(athlete_profile=profile, daily_record=daily_record)
-        SANAnswer.objects.bulk_create(
-            [
-                SANAnswer(
-                    test=test,
-                    question_number=answer.question_number,
-                    value=answer.value,
-                )
-                for answer in normalized_answers
-            ]
-        )
-
-        answers = list(test.answers.all())
-        san_scores = calculate_SAN_scores(answers)
-        PsychologicalData.objects.update_or_create(
-            daily_record=daily_record,
-            defaults={
-                "wellbeing": san_scores["wellbeing"],
-                "activity": san_scores["activity"],
-                "mood": san_scores["mood"],
-            },
-        )
-
-        daily_record.refresh_from_db()
-        scores = _calculate_if_ready(daily_record)
 
     return JsonResponse(
         {
             "san_scores": san_scores,
-            "record": _serialize_record(daily_record),
-            "scores": scores,
+            "record": serialize_record(daily_record),
+            "scores": overall_scores,
         },
-        status=201 if physical_instance is None else 200,
+        status=201,
     )

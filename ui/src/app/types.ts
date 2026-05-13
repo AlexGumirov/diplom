@@ -1,4 +1,12 @@
-export type Page = 'profile' | 'psychology' | 'physics' | 'overall' | 'dataEntry'
+export type Page =
+  | 'profile'
+  | 'psychology'
+  | 'physics'
+  | 'overall'
+  | 'dataEntry'
+  | 'profileEdit'
+  | 'statistics'
+  | 'diary'
 
 export interface Profile {
   id: number
@@ -44,16 +52,81 @@ export interface DeltaInfo {
   message?: string
 }
 
+export type PeriodFilter = '7' | '14' | '31' | 'all' | 'neighbors'
+export type CorrelationPeriod = '7' | '14' | '31' | 'all'
+
+export interface NeighborDelta {
+  from_date: string
+  to_date: string
+  previous_score: number
+  current_score: number
+  delta: number
+  status: 'improvement' | 'deterioration' | 'stable'
+}
+
+export interface AggregatedDelta {
+  period_start?: string
+  period_end?: string
+  days_count?: number
+  first_score?: number
+  last_score?: number
+  total_delta: number | null
+  status: 'improvement' | 'deterioration' | 'stable' | 'insufficient_data'
+  message?: string
+}
+
+export interface PeriodDeltaAnalysis {
+  period: PeriodFilter
+  aggregated: AggregatedDelta
+  neighbors?: NeighborDelta[]
+}
+
+export type DeltaAnalysisByPeriod = Record<PeriodFilter, PeriodDeltaAnalysis>
+
+export interface DeltaAnalysisByMetric {
+  overall: DeltaAnalysisByPeriod
+  physical: DeltaAnalysisByPeriod
+  psychological: DeltaAnalysisByPeriod
+}
+
 export interface SANQuestion {
   number: number
   left_text: string
   right_text: string
 }
 
+export type CorrelationStatus = 'ok' | 'insufficient_data'
+export type CorrelationDirection = 'positive' | 'negative' | 'none'
+export type CorrelationStrength = 'weak' | 'moderate' | 'strong'
+
+export interface CorrelationItem {
+  left_key: string
+  left_label: string
+  right_key: string
+  right_label: string
+  correlation: number
+  abs_correlation: number
+  strength: CorrelationStrength
+  strength_label: string
+  direction: CorrelationDirection
+  direction_label: string
+  message: string
+}
+
+export interface CorrelationReport {
+  status: CorrelationStatus
+  records_count: number
+  method: 'pearson'
+  min_required_records: number
+  items: CorrelationItem[]
+  message?: string
+}
+
 export interface AppBootstrap {
   profile: Profile
   records: RecordItem[]
   latest_delta: DeltaInfo | null
+  delta_analysis: DeltaAnalysisByMetric
   questions: SANQuestion[]
 }
 

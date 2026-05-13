@@ -1,4 +1,10 @@
-import type { AppBootstrap, PhysicalPayload, SANAnswerSubmission } from './types'
+import type {
+  AppBootstrap,
+  CorrelationPeriod,
+  CorrelationReport,
+  PhysicalPayload,
+  SANAnswerSubmission,
+} from './types'
 
 function getCookie(name: string) {
   const match = document.cookie.match(new RegExp(`(^|; )${name}=([^;]*)`))
@@ -58,4 +64,8 @@ export function submitSanTest(date: string, answers: SANAnswerSubmission[]) {
     method: 'POST',
     body: JSON.stringify({ date, answers }),
   })
+}
+
+export function fetchCorrelations(period: CorrelationPeriod, topN = 3) {
+  return request<CorrelationReport>(`/app-api/correlations/?period=${period}&top_n=${topN}`)
 }

@@ -13,8 +13,12 @@ urlpatterns = [
     path("physics/", frontend_views.spa_index, name="app-physics"),
     path("overall/", frontend_views.spa_index, name="app-overall"),
     path("data-entry/", frontend_views.spa_index, name="app-data-entry"),
+    path("profile/edit/", frontend_views.spa_index, name="app-profile-edit"),
+    path("statistics/", frontend_views.spa_index, name="app-statistics"),
+    path("diary/", frontend_views.spa_index, name="app-diary"),
     path("app-api/bootstrap/", frontend_views.app_bootstrap, name="app-bootstrap"),
+    path("app-api/delta-analysis/", frontend_views.app_delta_analysis, name="app-delta-analysis"),
+    path("app-api/correlations/", frontend_views.app_correlations, name="app-correlations"),
     path("app-api/physical/", frontend_views.save_physical_data, name="app-save-physical"),
     path("app-api/san/", frontend_views.submit_san_test, name="app-submit-san"),
-    path("app-api/record/", frontend_views.save_full_record, name="app-save-full-record-compat"),
 ]

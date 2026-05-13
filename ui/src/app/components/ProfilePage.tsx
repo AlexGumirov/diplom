@@ -1,26 +1,21 @@
-import { ImageWithFallback } from './figma/ImageWithFallback'
+import { useState } from 'react'
+import { BookOpen } from 'lucide-react'
 
+import { ImageWithFallback } from './figma/ImageWithFallback'
+import { EntryDetailModal } from './EntryDetailModal'
 import type { Profile, RecordItem } from '../types'
+import { type DiaryEntry, formatShortDate, recordToDiaryEntry } from '../lib/records'
 
 interface ProfilePageProps {
   profile: Profile
   records: RecordItem[]
-  onOpenEntry: (id: number) => void
+  onViewDiary: () => void
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
+export function ProfilePage({ profile, records, onViewDiary }: ProfilePageProps) {
+  const [selectedEntry, setSelectedEntry] = useState<DiaryEntry | null>(null)
+  const diaryEntries = records.map(recordToDiaryEntry).filter((entry): entry is DiaryEntry => entry !== null)
 
-function formatScore(value: number | null) {
-  return value === null ? '—' : Number(value.toFixed(1)).toString()
-}
-
-export function ProfilePage({ profile, records, onOpenEntry }: ProfilePageProps) {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-5xl mx-auto">
@@ -40,7 +35,7 @@ export function ProfilePage({ profile, records, onOpenEntry }: ProfilePageProps)
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                 <div>
                   <span className="text-muted-foreground">Возраст:</span>
-                  <span className="ml-2">{profile.age ?? '—'}{profile.age ? ' лет' : ''}</span>
+                  <span className="ml-2">{profile.age ? `${profile.age} лет` : '—'}</span>
                 </div>
 
                 <div>
@@ -58,7 +53,16 @@ export function ProfilePage({ profile, records, onOpenEntry }: ProfilePageProps)
         </div>
 
         <div className="bg-card rounded-lg shadow-sm border border-border p-6">
-          <h2 className="mb-4">Дневник</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2>Дневник</h2>
+            <button
+              onClick={onViewDiary}
+              className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
+            >
+              <BookOpen className="w-4 h-4" />
+              Посмотреть все записи
+            </button>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -72,27 +76,27 @@ export function ProfilePage({ profile, records, onOpenEntry }: ProfilePageProps)
                 </tr>
               </thead>
               <tbody>
-                {records.map((entry) => (
+                {diaryEntries.map((entry) => (
                   <tr key={entry.id} className="border-b border-border hover:bg-accent/50 transition-colors">
-                    <td className="py-4 px-4">{formatDate(entry.date)}</td>
+                    <td className="py-4 px-4">{formatShortDate(entry.date)}</td>
                     <td className="py-4 px-4">
                       <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
-                        {formatScore(entry.physical_score)}
+                        {entry.physical}
                       </span>
                     </td>
                     <td className="py-4 px-4">
                       <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
-                        {formatScore(entry.psychological_score)}
+                        {entry.psychology}
                       </span>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="inline-flex items-center justify-center min-w-10 h-10 px-2 rounded-full bg-primary text-primary-foreground">
-                        {formatScore(entry.total_score)}
+                      <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary text-primary-foreground">
+                        {entry.overall}
                       </span>
                     </td>
                     <td className="py-4 px-4">
                       <button
-                        onClick={() => onOpenEntry(entry.id)}
+                        onClick={() => setSelectedEntry(entry)}
                         className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                       >
                         Открыть запись
@@ -100,17 +104,18 @@ export function ProfilePage({ profile, records, onOpenEntry }: ProfilePageProps)
                     </td>
                   </tr>
                 ))}
-                {records.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-8 px-4 text-center text-muted-foreground">
-                      Пока нет записей. Начни с заполнения данных спортсмена.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
+
+          {diaryEntries.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">Пока нет полностью сохраненных записей.</p>
+            </div>
+          )}
         </div>
+
+        <EntryDetailModal entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
       </div>
     </div>
   )

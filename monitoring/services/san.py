@@ -43,13 +43,40 @@ SAN_LABELS = {
     "mood": "Настроение",
 }
 
+SAN_REVERSE_QUESTIONS = {
+    3,
+    4,
+    9,
+    10,
+    13,
+    15,
+    16,
+    21,
+    22,
+    27,
+    28,
+}
+
 
 def raw_to_san_value(value):
     return int(value) + 4
 
 
+def normalize_san_answer_value(question_number, value):
+    value = int(value)
+    if int(question_number) in SAN_REVERSE_QUESTIONS:
+        return 8 - value
+    return value
+
+
 def calculate_SAN_scores(answers):
-    values_by_question = {answer.question_number: answer.value for answer in answers}
+    values_by_question = {
+        answer.question_number: normalize_san_answer_value(
+            answer.question_number,
+            answer.value,
+        )
+        for answer in answers
+    }
 
     scores = {}
     for group, question_numbers in SAN_GROUPS.items():

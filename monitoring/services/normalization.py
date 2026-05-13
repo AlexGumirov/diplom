@@ -23,7 +23,7 @@ def normalize_direct(value, min_val, max_val):
     """
     Прямая нормализация: чем больше исходное значение, тем лучше состояние.
     Формула: X_norm = 1 + 9 * (X - X_min) / (X_max - X_min).
-    Используется для показателей, рост которых положительно влияет на оценку.
+    Используется для показателей, где большее значение соответствует более высокой оценке.
     """
     value = _to_float(value)
     min_val = _to_float(min_val)
@@ -53,28 +53,12 @@ def normalize_inverse(value, min_val, max_val):
     return _round_score(normalized)
 
 
-def normalize_optimal(value, optimal, deviation):
-    """
-    Нормализация с оптимумом: лучшая оценка достигается около оптимального значения.
-    Формула: X_norm = 10 - 9 * abs(X - X_opt) / D.
-    Используется для показателей, где вредны и недостаток, и избыток.
-    """
-    value = _to_float(value)
-    optimal = _to_float(optimal)
-    deviation = _to_float(deviation)
-    if value is None or optimal is None or deviation is None or deviation == 0:
-        return None
-
-    normalized = 10 - 9 * abs(value - optimal) / deviation
-    return _round_score(normalized)
-
-
 def normalize_sleep(value):
     """
-    Сон нормализуется по оптимуму 8 часов и допустимому отклонению 4 часа.
-    Такой подход отражает, что недостаток и чрезмерная длительность сна ухудшают состояние.
+    Сон нормализуется напрямую в диапазоне 0-12.
+    Чем больше длительность сна в допустимом диапазоне, тем выше оценка состояния.
     """
-    return normalize_optimal(value, optimal=8, deviation=4)
+    return normalize_direct(value, min_val=0, max_val=12)
 
 
 def normalize_meals(value):
@@ -95,10 +79,10 @@ def normalize_heart_rate_rest(value):
 
 def normalize_heart_rate_load(value):
     """
-    ЧСС при нагрузке нормализуется напрямую в диапазоне 90-220.
-    В текущей математической модели большее значение трактуется как большая тренировочная активность.
+    ЧСС при нагрузке нормализуется обратно в диапазоне 90-220.
+    Чем выше ЧСС при нагрузке, тем ниже текущая оценка состояния.
     """
-    return normalize_direct(value, min_val=90, max_val=220)
+    return normalize_inverse(value, min_val=90, max_val=220)
 
 
 def normalize_recovery(value):

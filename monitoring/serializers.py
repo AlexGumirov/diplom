@@ -54,7 +54,7 @@ class PhysicalDataSerializer(serializers.ModelSerializer):
         return representation
 
     def validate_sleep_hours(self, value):
-        return validate_range(value, 0, 10, "sleep_hours")
+        return validate_range(value, 0, 12, "sleep_hours")
 
     def validate_meals(self, value):
         return validate_range(value, 0, 5, "meals")

@@ -1,21 +1,9 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { CheckCircle, Save } from 'lucide-react'
+import { type FormEvent, useEffect, useState } from 'react'
+import { Save, CheckCircle } from 'lucide-react'
 
-import type {
-  PhysicalPayload,
-  RecordItem,
-  SANAnswerSubmission,
-  SANQuestion,
-} from '../types'
+import type { PhysicalPayload, RecordItem, SANAnswerSubmission, SANQuestion } from '../types'
 
-interface DataEntryPageProps {
-  questions: SANQuestion[]
-  latestRecord: RecordItem | null
-  onSavePhysical: (payload: PhysicalPayload) => Promise<void>
-  onSubmitSan: (date: string, answers: SANAnswerSubmission[]) => Promise<void>
-}
-
-interface PhysicalFormState {
+interface PhysicalData {
   date: string
   sleep: string
   meals: string
@@ -24,6 +12,7 @@ interface PhysicalFormState {
   recovery: string
   fatigue: string
   rpe: string
+  notes: string
 }
 
 interface SANResults {
@@ -32,17 +21,26 @@ interface SANResults {
   mood: number
 }
 
+interface DataEntryPageProps {
+  questions: SANQuestion[]
+  latestRecord: RecordItem | null
+  onSavePhysical: (payload: PhysicalPayload) => Promise<void>
+  onSubmitSan: (date: string, answers: SANAnswerSubmission[]) => Promise<void>
+}
+
 const SAN_GROUPS = {
   wellbeing: [1, 2, 7, 8, 13, 14, 19, 20, 25, 26],
   activity: [3, 4, 9, 10, 15, 16, 21, 22, 27, 28],
   mood: [5, 6, 11, 12, 17, 18, 23, 24, 29, 30],
 } as const
 
+const SAN_REVERSE_QUESTIONS = new Set([3, 4, 9, 10, 13, 15, 16, 21, 22, 27, 28])
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function getInitialPhysicalState(record: RecordItem | null): PhysicalFormState {
+function getInitialPhysicalState(record: RecordItem | null): PhysicalData {
   const physical = record?.physical_data
   return {
     date: record?.date ?? todayIsoDate(),
@@ -53,34 +51,20 @@ function getInitialPhysicalState(record: RecordItem | null): PhysicalFormState {
     recovery: physical ? String(physical.recovery_time) : '',
     fatigue: physical ? String(physical.fatigue) : '',
     rpe: physical ? String(physical.rpe) : '',
+    notes: '',
   }
 }
 
-function getStatusText(value: number) {
-  if (value < 4) return 'Плохое состояние'
-  if (value <= 5.5) return 'Нормальное состояние'
-  return 'Хорошее состояние'
-}
+function calculateSANResults(answers: SANAnswerSubmission[]) {
+  const normalizedValue = (answer: SANAnswerSubmission) =>
+    SAN_REVERSE_QUESTIONS.has(answer.question_number) ? 8 - answer.value : answer.value
 
-function getStatusColor(value: number) {
-  if (value < 4) return 'text-red-600'
-  if (value <= 5.5) return 'text-yellow-600'
-  return 'text-green-600'
-}
-
-function getProgressColor(value: number) {
-  if (value < 4) return 'bg-red-500'
-  if (value <= 5.5) return 'bg-yellow-500'
-  return 'bg-green-500'
-}
-
-function calculateSanResults(answers: SANAnswerSubmission[]) {
   const getAverage = (numbers: readonly number[]) => {
-    const values = numbers.map(
-      (number) => answers.find((answer) => answer.question_number === number)?.value ?? 0
-    )
-    const total = values.reduce((sum, value) => sum + value, 0)
-    return Number((total / numbers.length).toFixed(2))
+    const total = numbers.reduce((sum, number) => {
+      const answer = answers.find((item) => item.question_number === number)
+      return sum + (answer ? normalizedValue(answer) : 0)
+    }, 0)
+    return Number((total / numbers.length).toFixed(1))
   }
 
   return {
@@ -90,13 +74,31 @@ function calculateSanResults(answers: SANAnswerSubmission[]) {
   }
 }
 
+function getStatusText(value: number) {
+  if (value < 4) return 'Плохое состояние'
+  if (value > 5.5) return 'Хорошее состояние'
+  return 'Нормальное состояние'
+}
+
+function getStatusColor(value: number) {
+  if (value < 4) return 'text-red-600'
+  if (value > 5.5) return 'text-green-600'
+  return 'text-yellow-600'
+}
+
+function getProgressColor(value: number) {
+  if (value < 4) return 'bg-red-500'
+  if (value > 5.5) return 'bg-green-500'
+  return 'bg-yellow-500'
+}
+
 export function DataEntryPage({
   questions,
   latestRecord,
   onSavePhysical,
   onSubmitSan,
 }: DataEntryPageProps) {
-  const [physicalData, setPhysicalData] = useState<PhysicalFormState>(() => getInitialPhysicalState(latestRecord))
+  const [physicalData, setPhysicalData] = useState<PhysicalData>(() => getInitialPhysicalState(latestRecord))
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [sanAnswers, setSanAnswers] = useState<SANAnswerSubmission[]>([])
   const [sanResults, setSanResults] = useState<SANResults | null>(null)
@@ -112,9 +114,8 @@ export function DataEntryPage({
   }, [latestRecord])
 
   const currentQuestionData = questions[currentQuestion]
-  const progress = useMemo(() => ((currentQuestion + 1) / questions.length) * 100, [currentQuestion, questions.length])
 
-  const handleSavePhysical = async (e: FormEvent) => {
+  const handlePhysicalSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setPhysicalError('')
     setPhysicalSaved(false)
@@ -142,11 +143,11 @@ export function DataEntryPage({
   const handleSANAnswer = (rawValue: number) => {
     setSanError('')
     setSanSaved(false)
-    const answerValue = rawValue + 4
+    const value = rawValue + 4
     const questionNumber = currentQuestionData.number
     const nextAnswers = [
       ...sanAnswers.filter((answer) => answer.question_number !== questionNumber),
-      { question_number: questionNumber, value: answerValue },
+      { question_number: questionNumber, value },
     ].sort((left, right) => left.question_number - right.question_number)
 
     setSanAnswers(nextAnswers)
@@ -156,12 +157,12 @@ export function DataEntryPage({
       return
     }
 
-    setSanResults(calculateSanResults(nextAnswers))
+    setSanResults(calculateSANResults(nextAnswers))
   }
 
   const handleSaveSan = async () => {
     if (!sanResults || sanAnswers.length !== questions.length) {
-      setSanError('Сначала полностью пройди тест САН.')
+      setSanError('Сначала полностью пройдите тест САН.')
       return
     }
 
@@ -195,7 +196,7 @@ export function DataEntryPage({
         <div className="bg-card rounded-xl shadow-sm border border-border p-8">
           <h2 className="mb-6">Физические показатели</h2>
 
-          <form onSubmit={handleSavePhysical} className="space-y-6">
+          <form onSubmit={handlePhysicalSubmit} className="space-y-6">
             <div>
               <label className="block mb-2">Дата записи</label>
               <input
@@ -216,7 +217,7 @@ export function DataEntryPage({
                 <input
                   type="number"
                   step="0.1"
-                  placeholder="0–10"
+                  placeholder="0-12"
                   value={physicalData.sleep}
                   onChange={(e) => setPhysicalData({ ...physicalData, sleep: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -227,7 +228,7 @@ export function DataEntryPage({
                 <label className="block mb-2">Приемы пищи</label>
                 <input
                   type="number"
-                  placeholder="0–5"
+                  placeholder="0-5"
                   value={physicalData.meals}
                   onChange={(e) => setPhysicalData({ ...physicalData, meals: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -238,7 +239,7 @@ export function DataEntryPage({
                 <label className="block mb-2">ЧСС в покое</label>
                 <input
                   type="number"
-                  placeholder="50–90"
+                  placeholder="50-90"
                   value={physicalData.restingHR}
                   onChange={(e) => setPhysicalData({ ...physicalData, restingHR: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -249,7 +250,7 @@ export function DataEntryPage({
                 <label className="block mb-2">ЧСС при нагрузке</label>
                 <input
                   type="number"
-                  placeholder="90–220"
+                  placeholder="90-220"
                   value={physicalData.exerciseHR}
                   onChange={(e) => setPhysicalData({ ...physicalData, exerciseHR: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -271,7 +272,7 @@ export function DataEntryPage({
                 <label className="block mb-2">Усталость</label>
                 <input
                   type="number"
-                  placeholder="1–10"
+                  placeholder="1-10"
                   value={physicalData.fatigue}
                   onChange={(e) => setPhysicalData({ ...physicalData, fatigue: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -282,10 +283,21 @@ export function DataEntryPage({
                 <label className="block mb-2">RPE</label>
                 <input
                   type="number"
-                  placeholder="1–10"
+                  placeholder="1-10"
                   value={physicalData.rpe}
                   onChange={(e) => setPhysicalData({ ...physicalData, rpe: e.target.value })}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="block mb-2">Заметки</label>
+                <textarea
+                  placeholder="Добавьте комментарий к записи (пока не сохраняется)"
+                  value={physicalData.notes}
+                  onChange={(e) => setPhysicalData({ ...physicalData, notes: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 />
               </div>
             </div>
@@ -303,7 +315,7 @@ export function DataEntryPage({
               {physicalSaved ? (
                 <>
                   <CheckCircle className="w-5 h-5" />
-                  Физические данные сохранены
+                  Сохранено
                 </>
               ) : (
                 <>
@@ -318,7 +330,7 @@ export function DataEntryPage({
         {sanResults === null && currentQuestionData && (
           <div className="bg-card rounded-xl shadow-sm border border-border p-8">
             <h2 className="mb-2">Тест психологического состояния (САН)</h2>
-            <p className="text-muted-foreground mb-8">Оцени своё состояние по шкале, затем сохрани данные САН.</p>
+            <p className="text-muted-foreground mb-8">Оцените своё состояние по шкале</p>
 
             <div className="space-y-6">
               <div className="text-center">
@@ -349,7 +361,7 @@ export function DataEntryPage({
               <div className="w-full bg-muted rounded-full h-2">
                 <div
                   className="bg-primary h-2 rounded-full transition-all"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: `${((currentQuestion + 1) / questions.length) * 100}%` }}
                 ></div>
               </div>
             </div>

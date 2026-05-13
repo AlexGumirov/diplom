@@ -10,38 +10,36 @@ from .normalization import (
 )
 
 
-def weighted_average(values):
-    weighted_sum = sum(score * weight for score, weight in values)
-    total_weight = sum(weight for _, weight in values)
-    return round(weighted_sum / total_weight, 2)
+def average(values):
+    return round(sum(values) / len(values), 2)
 
 
 def calculate_physical_score(physical_data):
     """Calculates a physical condition score on a 1-10 scale."""
     values = [
-        (normalize_sleep(physical_data.sleep_hours), 0.18),
-        (normalize_meals(physical_data.meals), 0.10),
-        (normalize_heart_rate_rest(physical_data.heart_rate_rest), 0.16),
-        (normalize_heart_rate_load(physical_data.heart_rate_load), 0.14),
-        (normalize_recovery(physical_data.recovery_time), 0.16),
-        (normalize_fatigue(physical_data.fatigue), 0.13),
-        (normalize_rpe(physical_data.rpe), 0.13),
+        normalize_sleep(physical_data.sleep_hours),
+        normalize_meals(physical_data.meals),
+        normalize_heart_rate_rest(physical_data.heart_rate_rest),
+        normalize_heart_rate_load(physical_data.heart_rate_load),
+        normalize_recovery(physical_data.recovery_time),
+        normalize_fatigue(physical_data.fatigue),
+        normalize_rpe(physical_data.rpe),
     ]
-    return weighted_average(values)
+    return average(values)
 
 
 def calculate_psychological_score(psychological_data):
     """Calculates SAN psychological score on a 1-10 scale."""
     values = [
-        (normalize_san(psychological_data.wellbeing), 1),
-        (normalize_san(psychological_data.activity), 1),
-        (normalize_san(psychological_data.mood), 1),
+        normalize_san(psychological_data.wellbeing),
+        normalize_san(psychological_data.activity),
+        normalize_san(psychological_data.mood),
     ]
-    return weighted_average(values)
+    return average(values)
 
 
 def calculate_total_score(physical_score, psychological_score):
-    return weighted_average([(physical_score, 0.6), (psychological_score, 0.4)])
+    return average([physical_score, psychological_score])
 
 
 def calculate_record_scores(daily_record):

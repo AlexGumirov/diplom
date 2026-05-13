@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Django
+db.sqlite3
+media/
+staticfiles/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Frontend
+node_modules/
+ui/node_modules/
+ui/dist/
+
+# Build artifacts generated for Django static serving
+monitoring/static/ui/assets/
+monitoring/static/ui/index.html
+
+# Local/editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Temporary imported frontend drafts
+/src/
+
