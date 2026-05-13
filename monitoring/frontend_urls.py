@@ -19,6 +19,8 @@ urlpatterns = [
     path("app-api/bootstrap/", frontend_views.app_bootstrap, name="app-bootstrap"),
     path("app-api/delta-analysis/", frontend_views.app_delta_analysis, name="app-delta-analysis"),
     path("app-api/correlations/", frontend_views.app_correlations, name="app-correlations"),
+    path("app-api/anomalies/", frontend_views.app_anomalies, name="app-anomalies"),
+    path("app-api/profile/", frontend_views.update_profile, name="app-update-profile"),
     path("app-api/physical/", frontend_views.save_physical_data, name="app-save-physical"),
     path("app-api/san/", frontend_views.submit_san_test, name="app-submit-san"),
 ]

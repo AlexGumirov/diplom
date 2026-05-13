@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { Save, CheckCircle } from 'lucide-react'
 
 import type { PhysicalPayload, RecordItem, SANAnswerSubmission, SANQuestion } from '../types'
+import { formatRecoveryTime } from '../lib/records'
 
 interface PhysicalData {
   date: string
@@ -48,7 +49,7 @@ function getInitialPhysicalState(record: RecordItem | null): PhysicalData {
     meals: physical ? String(physical.meals) : '',
     restingHR: physical ? String(physical.heart_rate_rest) : '',
     exerciseHR: physical ? String(physical.heart_rate_load) : '',
-    recovery: physical ? String(physical.recovery_time) : '',
+    recovery: physical ? formatRecoveryTime(physical.recovery_time) : '',
     fatigue: physical ? String(physical.fatigue) : '',
     rpe: physical ? String(physical.rpe) : '',
     notes: '',

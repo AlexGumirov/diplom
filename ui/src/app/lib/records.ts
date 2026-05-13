@@ -31,6 +31,13 @@ export function formatShortDate(date: string) {
   })
 }
 
+export function formatRecoveryTime(value: number) {
+  const totalSeconds = Math.round(value * 60)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
 export function recordToDiaryEntry(record: RecordItem): DiaryEntry | null {
   if (!record.physical_data || !record.psychological_data) {
     return null
@@ -46,7 +53,7 @@ export function recordToDiaryEntry(record: RecordItem): DiaryEntry | null {
     meals: record.physical_data.meals,
     restingHR: record.physical_data.heart_rate_rest,
     exerciseHR: record.physical_data.heart_rate_load,
-    recovery: String(record.physical_data.recovery_time),
+    recovery: formatRecoveryTime(record.physical_data.recovery_time),
     fatigue: record.physical_data.fatigue,
     rpe: record.physical_data.rpe,
     wellbeing: record.psychological_data.wellbeing,
@@ -54,4 +61,3 @@ export function recordToDiaryEntry(record: RecordItem): DiaryEntry | null {
     mood: record.psychological_data.mood,
   }
 }
-

@@ -14,6 +14,7 @@ export interface Profile {
   display_name: string
   age: number | null
   gender: string
+  gender_value: string
   sport: string
 }
 
@@ -122,6 +123,33 @@ export interface CorrelationReport {
   message?: string
 }
 
+export type AnomalyStatus = 'ok' | 'warning' | 'insufficient_data'
+export type AnomalyDirection = 'above' | 'below'
+
+export interface AnomalyItem {
+  key: string
+  label: string
+  current_value: number
+  mean_value: number
+  difference: number
+  abs_difference: number
+  direction: AnomalyDirection
+  direction_label: string
+  message: string
+}
+
+export interface AnomalyReport {
+  status: AnomalyStatus
+  records_count: number
+  min_required_records: number
+  method?: 'Isolation Forest'
+  is_anomaly?: boolean
+  anomaly_score?: number
+  last_record_date?: string
+  items: AnomalyItem[]
+  message?: string
+}
+
 export interface AppBootstrap {
   profile: Profile
   records: RecordItem[]
@@ -144,4 +172,11 @@ export interface PhysicalPayload {
 export interface SANAnswerSubmission {
   question_number: number
   value: number
+}
+
+export interface ProfilePayload {
+  display_name: string
+  age: number | null
+  gender: string
+  sport: string
 }

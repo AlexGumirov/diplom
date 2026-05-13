@@ -1,5 +1,10 @@
 from .services.san import SAN_QUESTIONS
 
+GENDER_LABELS = {
+    "male": "Мужской",
+    "female": "Женский",
+}
+
 
 def serialize_profile(profile):
     return {
@@ -7,7 +12,8 @@ def serialize_profile(profile):
         "username": profile.user.username,
         "display_name": profile.user.get_full_name() or profile.user.username,
         "age": profile.age,
-        "gender": profile.get_gender_display() if profile.gender else "",
+        "gender": GENDER_LABELS.get(profile.gender, ""),
+        "gender_value": profile.gender,
         "sport": profile.sport,
     }
 
@@ -58,4 +64,3 @@ def serialize_san_questions():
         }
         for question in SAN_QUESTIONS
     ]
-

@@ -20,6 +20,7 @@ from .serializers import (
 from .services.analysis import (
     aggregated_delta,
     anomaly_detection,
+    build_anomaly_report,
     build_correlation_report,
     correlation_analysis,
     delta_analysis,
@@ -225,6 +226,17 @@ class AnalysisViewSet(CurrentUserDataMixin, viewsets.ViewSet):
         period_records = complete_records if period == "all" else complete_records[-int(period) :]
 
         return Response(build_correlation_report(period_records, top_n=top_n))
+
+    @action(detail=False, methods=["get"])
+    def anomalies(self, request):
+        profile = self.get_profile()
+        records = list(
+            DailyRecord.objects.filter(athlete_profile=profile)
+            .select_related("physical_data", "psychological_data", "state_score")
+            .order_by("date")
+        )
+        athlete_name = profile.user.get_full_name() or profile.user.username
+        return Response(build_anomaly_report(records, athlete_name=athlete_name))
 
     def _record_to_row(self, record):
         physical = getattr(record, "physical_data", None)

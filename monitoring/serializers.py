@@ -22,6 +22,11 @@ class AthleteProfileSerializer(serializers.ModelSerializer):
     def get_name(self, obj):
         return obj.user.get_full_name() or obj.user.username
 
+    def validate_age(self, value):
+        if value is None:
+            return value
+        return validate_range(value, 5, 100, "age")
+
 
 class PhysicalDataSerializer(serializers.ModelSerializer):
     recovery_time = serializers.FloatField()

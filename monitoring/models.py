@@ -6,7 +6,6 @@ class AthleteProfile(models.Model):
     GENDER_CHOICES = [
         ("male", "Male"),
         ("female", "Female"),
-        ("other", "Other"),
     ]
 
     user = models.OneToOneField(

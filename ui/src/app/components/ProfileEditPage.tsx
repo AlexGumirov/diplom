@@ -1,45 +1,97 @@
-import { useState } from 'react';
-import { Save, Upload, CheckCircle } from 'lucide-react';
-import { ImageWithFallback } from './figma/ImageWithFallback';
+import { useEffect, useState } from 'react'
+import { Save, Upload, CheckCircle, AlertTriangle } from 'lucide-react'
+
+import { ImageWithFallback } from './figma/ImageWithFallback'
+import type { Profile, ProfilePayload } from '../types'
 
 interface ProfileData {
-  nickname: string;
-  age: string;
-  gender: string;
-  sport: string;
-  avatar: string;
+  displayName: string
+  age: string
+  gender: string
+  sport: string
+  avatar: string
 }
 
-export function ProfileEditPage() {
-  const [profileData, setProfileData] = useState<ProfileData>({
-    nickname: 'Александр Иванов',
-    age: '28',
-    gender: 'male',
-    sport: 'Легкая атлетика',
-    avatar: 'https://images.unsplash.com/photo-1534258936925-c58bed479fcb?w=200&h=200&fit=crop',
-  });
+interface ProfileEditPageProps {
+  profile: Profile
+  onSave: (payload: ProfilePayload) => Promise<void>
+}
 
-  const [isSaved, setIsSaved] = useState(false);
-  const [previewAvatar, setPreviewAvatar] = useState(profileData.avatar);
+const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534258936925-c58bed479fcb?w=200&h=200&fit=crop'
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
+function profileToForm(profile: Profile): ProfileData {
+  return {
+    displayName: profile.display_name,
+    age: profile.age === null ? '' : String(profile.age),
+    gender: profile.gender_value || '',
+    sport: profile.sport || '',
+    avatar: DEFAULT_AVATAR,
+  }
+}
+
+export function ProfileEditPage({ profile, onSave }: ProfileEditPageProps) {
+  const [profileData, setProfileData] = useState<ProfileData>(() => profileToForm(profile))
+  const [isSaved, setIsSaved] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [previewAvatar, setPreviewAvatar] = useState(profileData.avatar)
+
+  useEffect(() => {
+    const nextProfileData = profileToForm(profile)
+    setProfileData(nextProfileData)
+    setPreviewAvatar(nextProfileData.avatar)
+  }, [profile])
+
+  const validateAge = () => {
+    if (!profileData.age.trim()) {
+      return null
+    }
+    const age = Number(profileData.age)
+    if (!Number.isInteger(age) || age < 5 || age > 100) {
+      return 'Возраст должен быть целым числом от 5 до 100.'
+    }
+    return null
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const ageError = validateAge()
+    if (ageError) {
+      setError(ageError)
+      return
+    }
+
+    setIsSaving(true)
+    setError('')
+    setIsSaved(false)
+    try {
+      await onSave({
+        display_name: profileData.displayName.trim(),
+        age: profileData.age.trim() ? Number(profileData.age) : null,
+        gender: profileData.gender,
+        sport: profileData.sport.trim(),
+      })
+      setIsSaved(true)
+      setTimeout(() => setIsSaved(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить профиль.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]
     if (file) {
-      const reader = new FileReader();
+      const reader = new FileReader()
       reader.onloadend = () => {
-        const result = reader.result as string;
-        setPreviewAvatar(result);
-        setProfileData({ ...profileData, avatar: result });
-      };
-      reader.readAsDataURL(file);
+        const result = reader.result as string
+        setPreviewAvatar(result)
+        setProfileData({ ...profileData, avatar: result })
+      }
+      reader.readAsDataURL(file)
     }
-  };
+  }
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -48,7 +100,6 @@ export function ProfileEditPage() {
 
         <div className="bg-card rounded-xl shadow-sm border border-border p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Аватар */}
             <div className="flex flex-col items-center">
               <div className="relative mb-4">
                 <ImageWithFallback
@@ -75,18 +126,17 @@ export function ProfileEditPage() {
               </p>
             </div>
 
-            {/* Поля формы */}
             <div className="space-y-6">
               <div>
-                <label className="block mb-2">Никнейм</label>
+                <label className="block mb-2">Имя</label>
                 <input
                   type="text"
-                  value={profileData.nickname}
+                  value={profileData.displayName}
                   onChange={(e) =>
-                    setProfileData({ ...profileData, nickname: e.target.value })
+                    setProfileData({ ...profileData, displayName: e.target.value })
                   }
                   className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Введите никнейм"
+                  placeholder="Введите имя"
                 />
               </div>
 
@@ -95,6 +145,9 @@ export function ProfileEditPage() {
                   <label className="block mb-2">Возраст</label>
                   <input
                     type="number"
+                    min="5"
+                    max="100"
+                    step="1"
                     value={profileData.age}
                     onChange={(e) =>
                       setProfileData({ ...profileData, age: e.target.value })
@@ -113,6 +166,7 @@ export function ProfileEditPage() {
                     }
                     className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary"
                   >
+                    <option value="">Не указан</option>
                     <option value="male">Мужской</option>
                     <option value="female">Женский</option>
                   </select>
@@ -133,10 +187,17 @@ export function ProfileEditPage() {
               </div>
             </div>
 
-            {/* Кнопка сохранения */}
+            {error && (
+              <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/30 border-2 border-red-500 rounded-lg p-4 text-red-700 dark:text-red-300">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm break-words">{error}</p>
+              </div>
+            )}
+
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+              disabled={isSaving}
+              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSaved ? (
                 <>
@@ -146,20 +207,19 @@ export function ProfileEditPage() {
               ) : (
                 <>
                   <Save className="w-5 h-5" />
-                  Сохранить изменения
+                  {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
                 </>
               )}
             </button>
           </form>
         </div>
 
-        {/* Информационная карточка */}
         <div className="mt-6 bg-accent/30 rounded-lg p-4 border border-border">
           <p className="text-sm text-muted-foreground">
-            Изменения профиля сохраняются автоматически и будут отображаться во всех разделах приложения.
+            Изменения профиля сохраняются и будут отображаться во всех разделах приложения.
           </p>
         </div>
       </div>
     </div>
-  );
+  )
 }

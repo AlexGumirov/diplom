@@ -1,8 +1,10 @@
 import type {
+  AnomalyReport,
   AppBootstrap,
   CorrelationPeriod,
   CorrelationReport,
   PhysicalPayload,
+  ProfilePayload,
   SANAnswerSubmission,
 } from './types'
 
@@ -68,4 +70,15 @@ export function submitSanTest(date: string, answers: SANAnswerSubmission[]) {
 
 export function fetchCorrelations(period: CorrelationPeriod, topN = 3) {
   return request<CorrelationReport>(`/app-api/correlations/?period=${period}&top_n=${topN}`)
+}
+
+export function fetchAnomalies() {
+  return request<AnomalyReport>('/app-api/anomalies/')
+}
+
+export function saveProfile(payload: ProfilePayload) {
+  return request('/app-api/profile/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }

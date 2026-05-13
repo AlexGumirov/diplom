@@ -1,11 +1,21 @@
+from datetime import date
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
 from rest_framework import serializers
 
-from monitoring.serializers import PhysicalDataSerializer
+from monitoring.models import (
+    AthleteProfile,
+    DailyRecord,
+    PhysicalData,
+    PsychologicalData,
+    StateScore,
+)
+from monitoring.serializers import AthleteProfileSerializer, PhysicalDataSerializer
 from monitoring.services.analysis import (
     aggregated_delta,
+    build_anomaly_report,
     build_correlation_report,
     delta_between_neighbors,
 )
@@ -25,6 +35,7 @@ from monitoring.services.san import (
     calculate_SAN_scores,
     normalize_san_answer_value,
 )
+from monitoring.utils.validators import parse_recovery_time
 
 
 class NormalizationTests(SimpleTestCase):
@@ -107,6 +118,21 @@ class SerializerValidationTests(SimpleTestCase):
         self.assertEqual(serializer.validate_sleep_hours(12), 12)
         with self.assertRaises(serializers.ValidationError):
             serializer.validate_sleep_hours(12.1)
+
+    def test_profile_age_allows_reasonable_range(self):
+        serializer = AthleteProfileSerializer()
+
+        self.assertEqual(serializer.validate_age(5), 5)
+        self.assertEqual(serializer.validate_age(100), 100)
+        self.assertIsNone(serializer.validate_age(None))
+        with self.assertRaises(serializers.ValidationError):
+            serializer.validate_age(4)
+        with self.assertRaises(serializers.ValidationError):
+            serializer.validate_age(101)
+
+    def test_recovery_time_parses_mm_ss_as_decimal_minutes(self):
+        self.assertAlmostEqual(parse_recovery_time("2:10"), 2 + 10 / 60)
+        self.assertAlmostEqual(parse_recovery_time("1:55"), 1 + 55 / 60)
 
 
 class DeltaAnalysisTests(SimpleTestCase):
@@ -354,6 +380,179 @@ class CorrelationAnalysisTests(SimpleTestCase):
         self.assertEqual(pair["correlation"], 1.0)
         self.assertEqual(pair["abs_correlation"], 1.0)
 
+
+class AnomalyAnalysisTests(SimpleTestCase):
+    def test_anomaly_report_requires_seven_complete_records(self):
+        records = [make_correlation_record(index) for index in range(1, 7)]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertEqual(report["status"], "insufficient_data")
+        self.assertEqual(report["records_count"], 6)
+        self.assertEqual(report["items"], [])
+
+    def test_anomaly_report_returns_ok_when_latest_record_is_close_to_means(self):
+        records = [make_correlation_record(index) for index in range(1, 8)]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["items"], [])
+        self.assertEqual(report["message"], "Все показатели не отклоняются от усредненных значений.")
+
+    def test_anomaly_report_flags_fatigue_norm_below_average(self):
+        records = [
+            make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
+            for index in range(1, 8)
+        ]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue_norm")
+
+        self.assertEqual(report["status"], "warning")
+        self.assertEqual(fatigue_item["direction"], "below")
+        self.assertEqual(fatigue_item["direction_label"], "уступает")
+
+    def test_anomaly_report_flags_sleep_norm_below_average(self):
+        records = [
+            make_correlation_record(index=index, sleep_hours=8 if index < 7 else 2)
+            for index in range(1, 8)
+        ]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+        sleep_item = next(item for item in report["items"] if item["key"] == "sleep_norm")
+
+        self.assertEqual(report["status"], "warning")
+        self.assertEqual(sleep_item["direction"], "below")
+        self.assertEqual(sleep_item["direction_label"], "уступает")
+
+    def test_anomaly_report_ignores_zero_standard_deviation(self):
+        records = [make_correlation_record(index=index, fatigue=5) for index in range(1, 8)]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertFalse(any(item["key"] == "fatigue_norm" for item in report["items"]))
+
+    def test_anomaly_report_formats_warning_message(self):
+        records = [
+            make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
+            for index in range(1, 8)
+        ]
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+        fatigue_item = next(item for item in report["items"] if item["key"] == "fatigue_norm")
+
+        self.assertIn("ВНИМАНИЕ! Показатель «Усталость»", fatigue_item["message"])
+        self.assertIn("для Александр Гумиров", fatigue_item["message"])
+        self.assertIn("уступает среднему значению", fatigue_item["message"])
+
+    def test_anomaly_report_uses_only_normalized_source_features(self):
+        records = [
+            make_correlation_record(index=index, fatigue=4 if index < 7 else 10)
+            for index in range(1, 8)
+        ]
+        aggregate_keys = {"physical_score", "psychological_score", "total_score"}
+
+        report = build_anomaly_report(records, athlete_name="Александр Гумиров")
+
+        self.assertTrue(report["items"])
+        for item in report["items"]:
+            self.assertTrue(item["key"].endswith("_norm"))
+            self.assertNotIn(item["key"], aggregate_keys)
+            self.assertGreaterEqual(item["current_value"], 1)
+            self.assertLessEqual(item["current_value"], 10)
+
+
+def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5):
+    record = DailyRecord.objects.create(
+        athlete_profile=profile,
+        date=date(2026, 5, day),
+    )
+    PhysicalData.objects.create(
+        daily_record=record,
+        sleep_hours=sleep_hours,
+        meals=3,
+        heart_rate_rest=60,
+        heart_rate_load=140,
+        recovery_time=2,
+        fatigue=fatigue,
+        rpe=5,
+    )
+    PsychologicalData.objects.create(
+        daily_record=record,
+        wellbeing=4,
+        activity=4,
+        mood=4,
+    )
+    StateScore.objects.create(
+        daily_record=record,
+        physical_score=6,
+        psychological_score=6,
+        total_score=6,
+    )
+    return record
+
+
+class ProfileApiTests(TestCase):
+    def test_profile_update_saves_current_user_profile(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/profile/",
+            data={
+                "display_name": "Александр Гумиров",
+                "age": 24,
+                "gender": "male",
+                "sport": "Легкая атлетика",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["profile"]
+        self.assertEqual(payload["display_name"], "Александр Гумиров")
+        self.assertEqual(payload["age"], 24)
+        self.assertEqual(payload["gender"], "Мужской")
+        self.assertEqual(payload["gender_value"], "male")
+        self.assertEqual(payload["sport"], "Легкая атлетика")
+
+    def test_profile_update_rejects_invalid_age(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/profile/",
+            data={
+                "display_name": "Александр Гумиров",
+                "age": 4,
+                "gender": "male",
+                "sport": "Легкая атлетика",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("age", response.json()["errors"])
+
+    def test_profile_update_rejects_unsupported_gender(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/profile/",
+            data={
+                "display_name": "Александр Гумиров",
+                "age": 24,
+                "gender": "other",
+                "sport": "Легкая атлетика",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("gender", response.json()["errors"])
+
     def test_correlation_report_filters_weak_correlations(self):
         weak_activity_values = [2, 6, 3, 5, 4, 1, 7]
         records = [
@@ -368,3 +567,22 @@ class CorrelationAnalysisTests(SimpleTestCase):
         report = build_correlation_report(records, top_n=20)
 
         self.assertEqual(report["items"], [])
+
+    def test_anomalies_endpoint_uses_only_current_user_data(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        other_user = get_user_model().objects.create_user(username="other", password="pass")
+        profile = AthleteProfile.objects.create(user=user)
+        other_profile = AthleteProfile.objects.create(user=other_user)
+        for day in range(1, 8):
+            create_complete_db_record(profile, day, fatigue=5)
+            create_complete_db_record(other_profile, day + 10, fatigue=4 if day < 7 else 10)
+
+        self.client.force_login(user)
+
+        response = self.client.get("/app-api/anomalies/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["records_count"], 7)
+        self.assertEqual(payload["status"], "ok")
+        self.assertFalse(any(item["key"] == "fatigue_norm" for item in payload["items"]))

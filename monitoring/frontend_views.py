@@ -11,8 +11,10 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import PhysicalData
 from .presenters import serialize_profile, serialize_record, serialize_san_questions
+from .serializers import AthleteProfileSerializer
 from .services.analysis import (
     aggregated_delta,
+    build_anomaly_report,
     build_correlation_report,
     delta_between_neighbors,
 )
@@ -205,6 +207,55 @@ def app_correlations(request):
     records = list(get_records_for_profile(profile))
     period_records = _records_for_correlation_period(records, period)
     return JsonResponse(build_correlation_report(period_records, top_n=top_n))
+
+
+@login_required(login_url="/login/")
+@require_GET
+def app_anomalies(request):
+    profile = get_or_create_profile(request.user)
+    records = list(get_records_for_profile(profile))
+    athlete_name = profile.user.get_full_name() or profile.user.username
+    return JsonResponse(build_anomaly_report(records, athlete_name=athlete_name))
+
+
+@login_required(login_url="/login/")
+@require_POST
+def update_profile(request):
+    profile = get_or_create_profile(request.user)
+
+    try:
+        payload = _read_json_body(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    display_name = str(payload.get("display_name", "")).strip()
+    if display_name:
+        name_parts = display_name.split(maxsplit=1)
+        request.user.first_name = name_parts[0]
+        request.user.last_name = name_parts[1] if len(name_parts) > 1 else ""
+    else:
+        request.user.first_name = ""
+        request.user.last_name = ""
+
+    raw_age = payload.get("age")
+    age = None if raw_age == "" else raw_age
+    serializer = AthleteProfileSerializer(
+        profile,
+        data={
+            "age": age,
+            "gender": payload.get("gender", ""),
+            "sport": payload.get("sport", ""),
+        },
+        partial=True,
+    )
+
+    if not serializer.is_valid():
+        return JsonResponse({"errors": json_safe_errors(serializer._errors)}, status=400)
+
+    request.user.save(update_fields=["first_name", "last_name"])
+    serializer.save()
+    profile.refresh_from_db()
+    return JsonResponse({"profile": serialize_profile(profile)})
 
 
 @login_required(login_url="/login/")

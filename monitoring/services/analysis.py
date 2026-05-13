@@ -1,6 +1,17 @@
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from monitoring.services.normalization import (
+    normalize_fatigue,
+    normalize_heart_rate_load,
+    normalize_heart_rate_rest,
+    normalize_meals,
+    normalize_recovery,
+    normalize_rpe,
+    normalize_san,
+    normalize_sleep,
+)
+
 
 ANALYSIS_FEATURES = [
     "sleep_hours",
@@ -16,6 +27,19 @@ ANALYSIS_FEATURES = [
     "physical_score",
     "psychological_score",
     "total_score",
+]
+
+ANOMALY_FEATURES = [
+    "sleep_norm",
+    "meals_norm",
+    "heart_rate_rest_norm",
+    "heart_rate_load_norm",
+    "recovery_norm",
+    "fatigue_norm",
+    "rpe_norm",
+    "wellbeing_norm",
+    "activity_norm",
+    "mood_norm",
 ]
 
 PHYSICAL_CORRELATION_FEATURES = [
@@ -36,7 +60,7 @@ PSYCHOLOGICAL_CORRELATION_FEATURES = [
 
 CORRELATION_FEATURES = PHYSICAL_CORRELATION_FEATURES + PSYCHOLOGICAL_CORRELATION_FEATURES
 
-CORRELATION_LABELS = {
+ANALYSIS_LABELS = {
     "sleep_hours": "Сон",
     "meals": "Приемы пищи",
     "heart_rate_rest": "ЧСС в покое",
@@ -47,8 +71,25 @@ CORRELATION_LABELS = {
     "wellbeing": "Самочувствие",
     "activity": "Активность",
     "mood": "Настроение",
+    "physical_score": "Физика",
+    "psychological_score": "Психология",
+    "total_score": "Общее состояние",
 }
+ANOMALY_LABELS = {
+    "sleep_norm": "Сон",
+    "meals_norm": "Приемы пищи",
+    "heart_rate_rest_norm": "ЧСС в покое",
+    "heart_rate_load_norm": "ЧСС при нагрузке",
+    "recovery_norm": "Восстановление",
+    "fatigue_norm": "Усталость",
+    "rpe_norm": "RPE",
+    "wellbeing_norm": "Самочувствие",
+    "activity_norm": "Активность",
+    "mood_norm": "Настроение",
+}
+CORRELATION_LABELS = ANALYSIS_LABELS
 MIN_CORRELATION_RECORDS = 7
+MIN_ANOMALY_RECORDS = 7
 
 
 def _score_status(delta):
@@ -144,13 +185,11 @@ def anomaly_detection(data):
     if dataframe.empty:
         return []
 
-    features = [column for column in ANALYSIS_FEATURES if column in dataframe.columns]
-    dataframe = dataframe[features].dropna()
+    dataframe = _normalized_anomaly_dataframe(dataframe.to_dict("records"))
     if len(dataframe) < 2:
         return [{"index": int(index), "is_anomaly": False, "score": None} for index in dataframe.index]
 
-    contamination = min(0.2, max(0.05, 1 / len(dataframe)))
-    model = IsolationForest(contamination=contamination, random_state=42)
+    model = IsolationForest(contamination="auto", random_state=42)
     labels = model.fit_predict(dataframe)
     scores = model.decision_function(dataframe)
 
@@ -226,12 +265,48 @@ def _record_to_correlation_row(record):
     }
 
 
-def build_correlation_report(records, top_n=3):
+def _normalized_anomaly_row(row):
+    return {
+        "date": row.get("date"),
+        "sleep_norm": normalize_sleep(row.get("sleep_hours")),
+        "meals_norm": normalize_meals(row.get("meals")),
+        "heart_rate_rest_norm": normalize_heart_rate_rest(row.get("heart_rate_rest")),
+        "heart_rate_load_norm": normalize_heart_rate_load(row.get("heart_rate_load")),
+        "recovery_norm": normalize_recovery(row.get("recovery_time")),
+        "fatigue_norm": normalize_fatigue(row.get("fatigue")),
+        "rpe_norm": normalize_rpe(row.get("rpe")),
+        "wellbeing_norm": normalize_san(row.get("wellbeing")),
+        "activity_norm": normalize_san(row.get("activity")),
+        "mood_norm": normalize_san(row.get("mood")),
+    }
+
+
+def _normalized_anomaly_dataframe(rows):
+    normalized_rows = [_normalized_anomaly_row(row) for row in rows]
+    dataframe = pd.DataFrame(normalized_rows)
+    if dataframe.empty:
+        return dataframe
+    return dataframe[ANOMALY_FEATURES].dropna()
+
+
+def _complete_analysis_rows(records):
     rows = [
         row
-        for row in (_record_to_correlation_row(record) for record in records)
+        for row in (
+            _record_to_correlation_row(record)
+            for record in sorted(records, key=lambda item: item.date)
+        )
         if row is not None
     ]
+    return [
+        row
+        for row in rows
+        if all(row.get(feature) is not None for feature in ANALYSIS_FEATURES)
+    ]
+
+
+def build_correlation_report(records, top_n=3):
+    rows = _complete_analysis_rows(records)
     records_count = len(rows)
 
     base_response = {
@@ -297,4 +372,109 @@ def build_correlation_report(records, top_n=3):
         **base_response,
         "status": "ok",
         "items": items[:safe_top_n],
+    }
+
+
+def _anomaly_direction(difference):
+    if difference > 0:
+        return "above", "превышает"
+    return "below", "уступает"
+
+
+def _round_metric(value):
+    return round(float(value), 2)
+
+
+def _anomaly_message(label, athlete_name, direction, direction_label, abs_difference):
+    comparison_target = "среднее значение" if direction == "above" else "среднему значению"
+    return (
+        f"ВНИМАНИЕ! Показатель «{label}» выходит за усредненные значения для {athlete_name}. "
+        f"Обратите внимание, показатель «{label}» {direction_label} "
+        f"{comparison_target} на {abs_difference}."
+    )
+
+
+def build_anomaly_report(records, athlete_name="спортсмена"):
+    rows = _complete_analysis_rows(records)
+    records_count = len(rows)
+    base_response = {
+        "records_count": records_count,
+        "min_required_records": MIN_ANOMALY_RECORDS,
+        "items": [],
+    }
+
+    if records_count < MIN_ANOMALY_RECORDS:
+        return {
+            **base_response,
+            "status": "insufficient_data",
+            "message": "Недостаточно данных для анализа критических отклонений. Нужно минимум 7 записей.",
+        }
+
+    dataframe = pd.DataFrame([_normalized_anomaly_row(row) for row in rows])
+    feature_frame = dataframe[ANOMALY_FEATURES]
+    model = IsolationForest(contamination="auto", random_state=42)
+    model.fit(feature_frame)
+
+    latest_features = feature_frame.tail(1)
+    latest_record = dataframe.iloc[-1]
+    is_anomaly = bool(model.predict(latest_features)[0] == -1)
+    anomaly_score = _round_metric(model.decision_function(latest_features)[0])
+    means = feature_frame.mean(numeric_only=True)
+    deviations = feature_frame.std(numeric_only=True)
+    items = []
+
+    for key in ANOMALY_FEATURES:
+        std_value = float(deviations[key])
+        if std_value == 0 or pd.isna(std_value):
+            continue
+
+        current_value = float(latest_record[key])
+        mean_value = float(means[key])
+        difference = current_value - mean_value
+        if abs(difference) < std_value:
+            continue
+
+        direction, direction_label = _anomaly_direction(difference)
+        rounded_difference = _round_metric(difference)
+        abs_difference = _round_metric(abs(difference))
+        label = ANOMALY_LABELS[key]
+        items.append(
+            {
+                "key": key,
+                "label": label,
+                "current_value": _round_metric(current_value),
+                "mean_value": _round_metric(mean_value),
+                "difference": rounded_difference,
+                "abs_difference": abs_difference,
+                "direction": direction,
+                "direction_label": direction_label,
+                "message": _anomaly_message(
+                    label,
+                    athlete_name,
+                    direction,
+                    direction_label,
+                    abs_difference,
+                ),
+            }
+        )
+
+    if not items:
+        return {
+            **base_response,
+            "status": "ok",
+            "method": "Isolation Forest",
+            "is_anomaly": is_anomaly,
+            "anomaly_score": anomaly_score,
+            "last_record_date": latest_record["date"],
+            "message": "Все показатели не отклоняются от усредненных значений.",
+        }
+
+    return {
+        **base_response,
+        "status": "warning",
+        "method": "Isolation Forest",
+        "is_anomaly": is_anomaly,
+        "anomaly_score": anomaly_score,
+        "last_record_date": latest_record["date"],
+        "items": items,
     }

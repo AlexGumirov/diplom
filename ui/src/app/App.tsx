@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { User, Brain, Activity, TrendingUp, ClipboardEdit, Settings, BarChart3, BookOpen } from 'lucide-react'
 
-import { fetchBootstrap, savePhysicalData, submitSanTest } from './api'
+import { fetchBootstrap, savePhysicalData, saveProfile, submitSanTest } from './api'
 import { ProfilePage } from './components/ProfilePage'
 import { PsychologyPage } from './components/PsychologyPage'
 import { PhysicsPage } from './components/PhysicsPage'
@@ -10,7 +10,7 @@ import { DataEntryPage } from './components/DataEntryPage'
 import { ProfileEditPage } from './components/ProfileEditPage'
 import { StatisticsPage } from './components/StatisticsPage'
 import { DiaryPage } from './components/DiaryPage'
-import type { AppBootstrap, Page, PhysicalPayload, SANAnswerSubmission } from './types'
+import type { AppBootstrap, Page, PhysicalPayload, ProfilePayload, SANAnswerSubmission } from './types'
 
 const PAGE_PATHS: Record<Page, string> = {
   profile: '/',
@@ -94,6 +94,11 @@ export default function App() {
 
   const handleSubmitSan = async (date: string, answers: SANAnswerSubmission[]) => {
     await submitSanTest(date, answers)
+    await loadData()
+  }
+
+  const handleSaveProfile = async (payload: ProfilePayload) => {
+    await saveProfile(payload)
     await loadData()
   }
 
@@ -254,7 +259,9 @@ export default function App() {
           onSubmitSan={handleSubmitSan}
         />
       )}
-      {currentPage === 'profileEdit' && <ProfileEditPage />}
+      {currentPage === 'profileEdit' && (
+        <ProfileEditPage profile={data.profile} onSave={handleSaveProfile} />
+      )}
       {currentPage === 'statistics' && <StatisticsPage userName={data.profile.display_name} />}
       {currentPage === 'diary' && <DiaryPage records={completedRecords} />}
     </div>
