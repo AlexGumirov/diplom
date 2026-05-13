@@ -26,6 +26,7 @@ def serialize_record(record):
     return {
         "id": record.id,
         "date": record.date.isoformat(),
+        "notes": record.notes,
         "created_at": record.created_at.isoformat(),
         "physical_score": getattr(state_score, "physical_score", None),
         "psychological_score": getattr(state_score, "psychological_score", None),

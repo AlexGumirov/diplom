@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { User, Brain, Activity, TrendingUp, ClipboardEdit, Settings, BarChart3, BookOpen } from 'lucide-react'
 
-import { fetchBootstrap, savePhysicalData, saveProfile, submitSanTest } from './api'
+import { fetchBootstrap, saveCompleteRecord, saveProfile } from './api'
 import { ProfilePage } from './components/ProfilePage'
 import { PsychologyPage } from './components/PsychologyPage'
 import { PhysicsPage } from './components/PhysicsPage'
@@ -10,7 +10,7 @@ import { DataEntryPage } from './components/DataEntryPage'
 import { ProfileEditPage } from './components/ProfileEditPage'
 import { StatisticsPage } from './components/StatisticsPage'
 import { DiaryPage } from './components/DiaryPage'
-import type { AppBootstrap, Page, PhysicalPayload, ProfilePayload, SANAnswerSubmission } from './types'
+import type { AppBootstrap, CompleteRecordPayload, Page, ProfilePayload } from './types'
 
 const PAGE_PATHS: Record<Page, string> = {
   profile: '/',
@@ -81,19 +81,13 @@ export default function App() {
     setCurrentPage(page)
   }
 
-  const latestRecord = useMemo(() => data?.records[0] ?? null, [data])
   const completedRecords = useMemo(
     () => data?.records.filter((record) => record.total_score !== null) ?? [],
     [data]
   )
 
-  const handleSavePhysical = async (payload: PhysicalPayload) => {
-    await savePhysicalData(payload)
-    await loadData()
-  }
-
-  const handleSubmitSan = async (date: string, answers: SANAnswerSubmission[]) => {
-    await submitSanTest(date, answers)
+  const handleSaveRecord = async (payload: CompleteRecordPayload) => {
+    await saveCompleteRecord(payload)
     await loadData()
   }
 
@@ -254,9 +248,8 @@ export default function App() {
       {currentPage === 'dataEntry' && (
         <DataEntryPage
           questions={data.questions}
-          latestRecord={latestRecord}
-          onSavePhysical={handleSavePhysical}
-          onSubmitSan={handleSubmitSan}
+          existingDates={data.records.map((record) => record.date)}
+          onSaveRecord={handleSaveRecord}
         />
       )}
       {currentPage === 'profileEdit' && (

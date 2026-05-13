@@ -46,6 +46,7 @@ export function recordToDiaryEntry(record: RecordItem): DiaryEntry | null {
   return {
     id: record.id,
     date: record.date,
+    notes: record.notes,
     physical: formatScore(record.physical_score ?? 0),
     psychology: formatScore(record.psychological_score ?? 0),
     overall: formatScore(record.total_score ?? 0),

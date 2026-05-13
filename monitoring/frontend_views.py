@@ -19,6 +19,7 @@ from .services.analysis import (
     delta_between_neighbors,
 )
 from .services.record_workflow import (
+    CompleteRecordValidationError,
     build_delta,
     build_physical_serializer,
     calculate_if_ready,
@@ -26,6 +27,7 @@ from .services.record_workflow import (
     get_or_create_profile,
     get_records_for_profile,
     json_safe_errors,
+    save_complete_record,
     save_san_results,
     validate_san_answers,
 )
@@ -289,6 +291,34 @@ def save_physical_data(request):
             "scores": calculate_if_ready(daily_record),
         },
         status=201 if physical_instance is None else 200,
+    )
+
+
+@login_required(login_url="/login/")
+@require_POST
+def save_complete_daily_record(request):
+    profile = get_or_create_profile(request.user)
+
+    try:
+        payload = _read_json_body(request)
+        daily_record, san_scores, overall_scores = save_complete_record(
+            profile=profile,
+            payload=payload,
+            request=request,
+        )
+    except ValueError as exc:
+        return JsonResponse({"errors": {"date": [str(exc)]}}, status=400)
+    except CompleteRecordValidationError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
+
+    return JsonResponse(
+        {
+            "message": "Данные сохранены.",
+            "san_scores": san_scores,
+            "record": serialize_record(daily_record),
+            "scores": overall_scores,
+        },
+        status=201,
     )
 
 

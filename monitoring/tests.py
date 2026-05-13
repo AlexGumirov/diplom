@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 from rest_framework import serializers
 
 from monitoring.models import (
@@ -540,6 +541,16 @@ class FrontendSourceTests(SimpleTestCase):
         self.assertNotIn("14 дней", source)
         self.assertNotIn("31 день", source)
 
+    def test_data_entry_page_uses_single_complete_record_save(self):
+        source = Path("ui/src/app/components/DataEntryPage.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("onSaveRecord", source)
+        self.assertIn("physical_data", source)
+        self.assertIn("notes: physicalData.notes", source)
+        self.assertIn("Сохранить данные", source)
+        self.assertNotIn("Сохранить физические данные", source)
+        self.assertNotIn("пока не сохраняется", source)
+
 
 def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5, activity=4):
     record = DailyRecord.objects.create(
@@ -569,6 +580,26 @@ def create_complete_db_record(profile, day, sleep_hours=8, fatigue=5, activity=4
         total_score=6,
     )
     return record
+
+
+def complete_record_payload(record_date=None, notes="Хорошая тренировка"):
+    return {
+        "date": (record_date or timezone.localdate()).isoformat(),
+        "notes": notes,
+        "physical_data": {
+            "sleep_hours": 8,
+            "meals": 3,
+            "heart_rate_rest": 60,
+            "heart_rate_load": 140,
+            "recovery_time": "2:10",
+            "fatigue": 5,
+            "rpe": 5,
+        },
+        "answers": [
+            {"question_number": question_number, "value": 4}
+            for question_number in range(1, 31)
+        ],
+    }
 
 
 class ProfileApiTests(TestCase):
@@ -687,3 +718,49 @@ class ProfileApiTests(TestCase):
         self.assertIn("normalized_current_value", sleep_item)
         self.assertIn("normalized_mean_value", sleep_item)
         self.assertNotIn("current_value", sleep_item)
+
+    def test_complete_record_endpoint_saves_notes_to_diary_record(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        AthleteProfile.objects.create(user=user)
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/records/",
+            data=complete_record_payload(notes="Ноги тяжелые, но самочувствие нормальное."),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["record"]["notes"], "Ноги тяжелые, но самочувствие нормальное.")
+        self.assertEqual(payload["record"]["physical_data"]["recovery_time"], 2 + 10 / 60)
+        self.assertEqual(DailyRecord.objects.get().notes, "Ноги тяжелые, но самочувствие нормальное.")
+
+    def test_complete_record_endpoint_rejects_duplicate_date(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        profile = AthleteProfile.objects.create(user=user)
+        DailyRecord.objects.create(athlete_profile=profile, date=timezone.localdate())
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/records/",
+            data=complete_record_payload(),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("date", response.json()["errors"])
+
+    def test_complete_record_endpoint_rejects_future_date(self):
+        user = get_user_model().objects.create_user(username="athlete", password="pass")
+        AthleteProfile.objects.create(user=user)
+        self.client.force_login(user)
+
+        response = self.client.post(
+            "/app-api/records/",
+            data=complete_record_payload(record_date=timezone.localdate() + timedelta(days=1)),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("будущую дату", response.json()["errors"]["date"][0])

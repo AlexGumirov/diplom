@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
@@ -138,6 +139,7 @@ class DailyRecordSerializer(serializers.ModelSerializer):
             "athlete_profile",
             "athlete",
             "date",
+            "notes",
             "created_at",
             "physical_score",
             "psychological_score",
@@ -157,4 +159,9 @@ class DailyRecordSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request and value.user != request.user:
             raise serializers.ValidationError("You can create records only for yourself.")
+        return value
+
+    def validate_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError("Нельзя создавать запись на будущую дату.")
         return value

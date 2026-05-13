@@ -123,7 +123,9 @@ export function DiaryPage({ records }: DiaryPageProps) {
                       </span>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="text-sm text-muted-foreground">—</span>
+                      <span className="text-sm text-muted-foreground line-clamp-2">
+                        {entry.notes || '—'}
+                      </span>
                     </td>
                     <td className="py-4 px-4">
                       <button

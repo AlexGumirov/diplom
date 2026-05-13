@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import json
 
+from django.db import IntegrityError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -15,6 +16,12 @@ from monitoring.services.san import SAN_QUESTIONS, calculate_SAN_scores
 class SANAnswerPayload:
     question_number: int
     value: int
+
+
+class CompleteRecordValidationError(Exception):
+    def __init__(self, errors):
+        super().__init__("Complete record validation failed.")
+        self.errors = errors
 
 
 def get_or_create_profile(user):
@@ -33,9 +40,15 @@ def get_record_date(raw_date):
     if raw_date:
         parsed = parse_date(raw_date)
         if parsed is None:
-            raise ValueError("Invalid date format. Use YYYY-MM-DD.")
-        return parsed
-    return timezone.localdate()
+            raise ValueError("Некорректная дата. Используйте формат ГГГГ-ММ-ДД.")
+        record_date = parsed
+    else:
+        record_date = timezone.localdate()
+
+    if record_date > timezone.localdate():
+        raise ValueError("Нельзя создавать запись на будущую дату.")
+
+    return record_date
 
 
 def get_or_create_daily_record(profile, raw_date):
@@ -43,6 +56,15 @@ def get_or_create_daily_record(profile, raw_date):
         athlete_profile=profile,
         date=get_record_date(raw_date),
     )[0]
+
+
+def get_new_record_date(profile, raw_date):
+    record_date = get_record_date(raw_date)
+    if DailyRecord.objects.filter(athlete_profile=profile, date=record_date).exists():
+        raise CompleteRecordValidationError(
+            {"date": ["За выбранную дату уже есть запись в дневнике."]}
+        )
+    return record_date
 
 
 def calculate_if_ready(daily_record):
@@ -162,3 +184,43 @@ def save_san_results(profile, daily_record, answers):
         overall_scores = calculate_if_ready(daily_record)
 
     return scores, overall_scores
+
+
+def save_complete_record(profile, payload, request):
+    physical_payload = payload.get("physical_data") or {}
+    answers_payload = payload.get("answers", [])
+    answers, san_errors = validate_san_answers(answers_payload)
+    if san_errors:
+        raise CompleteRecordValidationError(san_errors)
+
+    record_date = get_new_record_date(profile, payload.get("date"))
+    notes = str(payload.get("notes", "")).strip()
+
+    try:
+        with transaction.atomic():
+            daily_record = DailyRecord.objects.create(
+                athlete_profile=profile,
+                date=record_date,
+                notes=notes,
+            )
+            serializer = build_physical_serializer(
+                daily_record=daily_record,
+                payload=physical_payload,
+                request=request,
+            )
+            if not serializer.is_valid():
+                raise CompleteRecordValidationError(json_safe_errors(serializer._errors))
+
+            serializer.save(daily_record=daily_record)
+            san_scores, overall_scores = save_san_results(
+                profile=profile,
+                daily_record=daily_record,
+                answers=answers,
+            )
+            daily_record.refresh_from_db()
+    except IntegrityError as exc:
+        raise CompleteRecordValidationError(
+            {"date": ["За выбранную дату уже есть запись в дневнике."]}
+        ) from exc
+
+    return daily_record, san_scores, overall_scores

@@ -36,6 +36,7 @@ class DailyRecord(models.Model):
         on_delete=models.CASCADE,
     )
     date = models.DateField()
+    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

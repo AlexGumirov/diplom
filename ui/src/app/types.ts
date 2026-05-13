@@ -37,6 +37,7 @@ export interface PsychologicalDataRecord {
 export interface RecordItem {
   id: number
   date: string
+  notes: string
   created_at: string
   physical_score: number | null
   psychological_score: number | null
@@ -172,6 +173,13 @@ export interface PhysicalPayload {
   recovery_time: string
   fatigue: number
   rpe: number
+}
+
+export interface CompleteRecordPayload {
+  date: string
+  notes: string
+  physical_data: Omit<PhysicalPayload, 'date'>
+  answers: SANAnswerSubmission[]
 }
 
 export interface SANAnswerSubmission {
